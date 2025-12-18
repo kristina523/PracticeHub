@@ -317,20 +317,15 @@ router.post('/register/student',
         }
       }
       
-      const hashedPassword = await bcrypt.hash(password, 10);
-      
       const studentUser = await prisma.studentUser.create({
         data: {
           username: username.trim(),
-          email: email.trim(),
-          password: hashedPassword,
-          studentId: studentId 
+          email: email.trim()
         },
         select: {
           id: true,
           username: true,
           email: true,
-          studentId: true,
           createdAt: true
         }
       });
@@ -407,7 +402,6 @@ router.post('/login',
             id: user.id,
             username: user.username,
             email: user.email,
-            studentId: user.studentId,
             role: 'student'
           };
         }
@@ -444,7 +438,6 @@ router.post('/login',
                 id: user.id,
                 username: user.username,
                 email: user.email,
-                studentId: user.studentId,
                 role: 'student'
               };
             }

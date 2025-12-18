@@ -1,0 +1,29 @@
+node_modules
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+
+# Database files
+*.db
+*.db-journal
+backend/prisma/dev.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build files
+dist/
+build/
+*.tsbuildinfo

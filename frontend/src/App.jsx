@@ -18,6 +18,7 @@ import Calendar from './pages/Calendar';
 import Reports from './pages/Reports';
 import Applications from './pages/Applications';
 import Notifications from './pages/Notifications';
+import Tasks from './pages/Tasks';
 
 function PrivateRoute({ children, allowedRoles = null }) {
   const { isAuthenticated, initAuth, user } = useAuthStore();
@@ -71,6 +72,7 @@ function App() {
         <Route path="reports" element={<Reports />} />
         <Route path="applications" element={<Applications />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="tasks" element={<Tasks />} />
       </Route>
 
       {/* Маршруты преподавателя */}

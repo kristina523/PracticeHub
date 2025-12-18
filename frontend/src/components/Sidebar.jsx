@@ -6,7 +6,8 @@ import {
   Calendar, 
   BarChart3,
   FileText,
-  Megaphone
+  Megaphone,
+  ClipboardList
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 
@@ -20,6 +21,7 @@ function Sidebar() {
     { name: 'Дашборд', href: '/', icon: LayoutDashboard },
     { name: 'Практиканты', href: '/students', icon: Users },
     { name: 'Заявки', href: '/applications', icon: FileText },
+    { name: 'Задания', href: '/tasks', icon: ClipboardList },
     { name: 'Учебные заведения', href: '/institutions', icon: School },
     { name: 'Календарь', href: '/calendar', icon: Calendar },
     { name: 'Отчеты', href: '/reports', icon: BarChart3 },

@@ -251,65 +251,101 @@ router.patch('/:id/approve', authenticateToken, async (req, res) => {
     }
 
     if (application.status !== 'PENDING') {
-      return res.status(400).json({ message: 'Заявка уже обработана' });
-    }
-    let institution = await prisma.institution.findFirst({
-      where: { name: application.institutionName }
-    });
-
-    if (!institution) {
-      institution = await prisma.institution.create({
-        data: {
-          name: application.institutionName,
-          type: 'COLLEGE' 
-        }
+      const statusMessages = {
+        'APPROVED': 'Заявка уже одобрена',
+        'REJECTED': 'Заявка уже отклонена'
+      };
+      return res.status(400).json({ 
+        message: statusMessages[application.status] || 'Заявка уже обработана',
+        currentStatus: application.status
       });
     }
 
-    const student = await prisma.student.create({
-      data: {
-        lastName: application.lastName,
-        firstName: application.firstName,
-        middleName: application.middleName,
-        practiceType: application.practiceType,
-        institutionId: institution.id,
-        institutionName: application.institutionName,
-        course: application.course,
-        email: application.email,
-        phone: application.phone,
-        telegramId: application.telegramId,
-        startDate: application.startDate,
-        endDate: application.endDate,
-        status: 'PENDING',
-        supervisor: null,
-        notes: notes || application.notes
-      }
-    });
+    // Используем транзакцию для атомарности операции и предотвращения race conditions
+    const result = await prisma.$transaction(async (tx) => {
+      // Повторно проверяем статус в транзакции
+      const currentApp = await tx.practiceApplication.findUnique({
+        where: { id }
+      });
 
-    const updatedApplication = await prisma.practiceApplication.update({
-      where: { id },
-      data: {
-        status: 'APPROVED',
-        approvedBy: user.id,
-        notes: notes || application.notes
-      },
-      include: {
-        studentUser: {
-          select: {
-            id: true,
-            username: true,
-            email: true
+      if (!currentApp) {
+        throw new Error('Заявка не найдена');
+      }
+
+      if (currentApp.status !== 'PENDING') {
+        const statusMessages = {
+          'APPROVED': 'Заявка уже одобрена',
+          'REJECTED': 'Заявка уже отклонена'
+        };
+        throw new Error(statusMessages[currentApp.status] || 'Заявка уже обработана');
+      }
+
+      // Создаем или находим учебное заведение
+      let institution = await tx.institution.findFirst({
+        where: { name: application.institutionName }
+      });
+
+      if (!institution) {
+        institution = await tx.institution.create({
+          data: {
+            name: application.institutionName,
+            type: 'COLLEGE' 
+          }
+        });
+      }
+
+      // Создаем студента
+      const student = await tx.student.create({
+        data: {
+          lastName: application.lastName,
+          firstName: application.firstName,
+          middleName: application.middleName,
+          practiceType: application.practiceType,
+          institutionId: institution.id,
+          institutionName: application.institutionName,
+          course: application.course,
+          email: application.email,
+          phone: application.phone,
+          telegramId: application.telegramId,
+          startDate: application.startDate,
+          endDate: application.endDate,
+          status: 'PENDING',
+          supervisor: null,
+          notes: notes || application.notes
+        }
+      });
+
+      // Обновляем заявку
+      const updatedApplication = await tx.practiceApplication.update({
+        where: { id },
+        data: {
+          status: 'APPROVED',
+          approvedBy: user.id,
+          notes: notes || application.notes
+        },
+        include: {
+          studentUser: {
+            select: {
+              id: true,
+              username: true,
+              email: true
+            }
           }
         }
+      });
+
+      // Связываем созданного студента с учетной записью StudentUser через поле userId в Student
+      if (application.studentUserId) {
+        await tx.student.update({
+          where: { id: student.id },
+          data: { userId: application.studentUserId }
+        });
       }
+
+      return { updatedApplication, student };
     });
 
-    if (application.studentUser.studentId === null) {
-      await prisma.studentUser.update({
-        where: { id: application.studentUserId },
-        data: { studentId: student.id }
-      });
-    }
+    const { updatedApplication, student } = result;
 
     try {
       console.log('Отправка уведомления об одобрении заявки:', id);
@@ -330,6 +366,10 @@ router.patch('/:id/approve', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Ошибка одобрения заявки:', error);
+    // Если ошибка из транзакции (например, заявка уже обработана), возвращаем понятное сообщение
+    if (error.message && (error.message.includes('уже одобрена') || error.message.includes('уже отклонена') || error.message.includes('уже обработана'))) {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Внутренняя ошибка сервера' });
   }
 });
@@ -354,10 +394,36 @@ router.patch('/:id/reject', authenticateToken, async (req, res) => {
     }
 
     if (application.status !== 'PENDING') {
-      return res.status(400).json({ message: 'Заявка уже обработана' });
+      const statusMessages = {
+        'APPROVED': 'Заявка уже одобрена',
+        'REJECTED': 'Заявка уже отклонена'
+      };
+      return res.status(400).json({ 
+        message: statusMessages[application.status] || 'Заявка уже обработана',
+        currentStatus: application.status
+      });
     }
 
-    const updatedApplication = await prisma.practiceApplication.update({
+    // Используем транзакцию для атомарности операции
+    const result = await prisma.$transaction(async (tx) => {
+      // Повторно проверяем статус в транзакции
+      const currentApp = await tx.practiceApplication.findUnique({
+        where: { id }
+      });
+
+      if (!currentApp) {
+        throw new Error('Заявка не найдена');
+      }
+
+      if (currentApp.status !== 'PENDING') {
+        const statusMessages = {
+          'APPROVED': 'Заявка уже одобрена',
+          'REJECTED': 'Заявка уже отклонена'
+        };
+        throw new Error(statusMessages[currentApp.status] || 'Заявка уже обработана');
+      }
+
+      const updatedApplication = await tx.practiceApplication.update({
       where: { id },
       data: {
         status: 'REJECTED',
@@ -372,7 +438,9 @@ router.patch('/:id/reject', authenticateToken, async (req, res) => {
           }
         }
       }
+      });
     });
+
     try {
       console.log('Отправка уведомления об отклонении заявки:', id);
       const notificationResult = await notifyApplicationStatusChange(id, 'REJECTED', rejectionReason || 'Заявка отклонена');
@@ -388,6 +456,10 @@ router.patch('/:id/reject', authenticateToken, async (req, res) => {
     res.json({ message: 'Заявка отклонена', application: updatedApplication });
   } catch (error) {
     console.error('Ошибка отклонения заявки:', error);
+    // Если ошибка из транзакции (например, заявка уже обработана), возвращаем понятное сообщение
+    if (error.message && (error.message.includes('уже одобрена') || error.message.includes('уже отклонена') || error.message.includes('уже обработана'))) {
+      return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: 'Внутренняя ошибка сервера' });
   }
 });

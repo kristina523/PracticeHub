@@ -16,6 +16,7 @@ function RegisterTeacher() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [consent, setConsent] = useState(false);
   
   const { registerTeacher } = useAuthStore();
   const navigate = useNavigate();
@@ -25,6 +26,10 @@ function RegisterTeacher() {
       ...formData,
       [e.target.name]: e.target.value
     });
+  };
+
+  const handleConsentChange = (e) => {
+    setConsent(e.target.checked);
   };
 
   const handleSubmit = async (e) => {
@@ -38,6 +43,11 @@ function RegisterTeacher() {
 
     if (formData.password.length < 6) {
       setError('Пароль должен содержать не менее 6 символов');
+      return;
+    }
+
+    if (!consent) {
+      setError('Для регистрации необходимо согласиться с политикой конфиденциальности и обработкой персональных данных.');
       return;
     }
 
@@ -208,13 +218,51 @@ function RegisterTeacher() {
               />
             </div>
 
+            <div className="flex items-start space-x-2">
+              <input
+                id="consent"
+                name="consent"
+                type="checkbox"
+                checked={consent}
+                onChange={handleConsentChange}
+                className="mt-1 h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+              />
+              <label htmlFor="consent" className="text-sm text-gray-700 dark:text-gray-300">
+                Я подтверждаю, что ознакомился(ась) и согласен(на) с{' '}
+                <span className="font-medium">
+                  политикой конфиденциальности и обработкой персональных данных
+                </span>
+              </label>
+            </div>
+
             <button
               type="submit"
-              disabled={loading}
-              className="btn btn-primary w-full"
+              disabled={
+                loading ||
+                !formData.username ||
+                !formData.email ||
+                !formData.password ||
+                !formData.confirmPassword ||
+                !formData.firstName ||
+                !formData.lastName ||
+                !consent
+              }
+              className="btn btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'Регистрация...' : 'Зарегистрироваться'}
             </button>
+
+            {(!formData.username ||
+              !formData.email ||
+              !formData.password ||
+              !formData.confirmPassword ||
+              !formData.firstName ||
+              !formData.lastName ||
+              !consent) && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+                Заполните все обязательные поля и подтвердите согласие с политикой
+              </p>
+            )}
 
             <div className="text-center text-sm text-gray-600 dark:text-gray-400">
               Уже есть аккаунт?{' '}

@@ -10,54 +10,139 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 let bot = null;
 let botInfo = null;
 
-if (token) {
+// Функция инициализации бота
+async function initializeBot() {
+  if (!token) {
+    console.log('⚠️ TELEGRAM_BOT_TOKEN не установлен, бот не будет работать');
+    return false;
+  }
+
   try {
+    console.log('🔄 Инициализация Telegram-бота...');
+    console.log(`📝 Токен: ${token.substring(0, 10)}...${token.substring(token.length - 5)}`);
+    
+
     bot = new TelegramBot(token, { 
       polling: {
         interval: 300, 
-        autoStart: true,
+        autoStart: false,  
         params: {
-          timeout: 10   
+          timeout: 30   // Увеличиваем таймаут для запросов
         }
+      },
+      request: {
+        agentOptions: {
+          keepAlive: true,
+          keepAliveMsecs: 10000
+        },
+        timeout: 30000  // Таймаут для HTTP запросов
       }
     });
     
-    console.log('🔄 Инициализация Telegram-бота...');
+
+    console.log('🔍 Проверка подключения к Telegram API...');
+    try {
+      // Увеличиваем таймаут до 30 секунд и добавляем опции для getMe
+      const getMePromise = bot.getMe();
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Таймаут подключения к Telegram API (30 секунд)')), 30000)
+      );
+      
+      botInfo = await Promise.race([getMePromise, timeoutPromise]);
+      console.log(`✅ Telegram-бот подключен: @${botInfo.username}`);
+      console.log(`🔗 Ссылка на бота: https://t.me/${botInfo.username}`);
+    } catch (getMeError) {
+      console.error('❌ Ошибка получения информации о боте:', getMeError.message);
+      if (getMeError.response) {
+        console.error('Ответ Telegram API:', getMeError.response.body || getMeError.response);
+      }
+      // Если это таймаут или сетевая ошибка, не прерываем работу сервера
+      if (getMeError.message.includes('Таймаут') || getMeError.code === 'ETIMEDOUT' || getMeError.code === 'ECONNREFUSED') {
+        console.warn('⚠️ Telegram API недоступен, но сервер продолжит работу без бота');
+        console.warn('💡 Проверьте интернет-соединение и доступность Telegram API');
+        bot = null;
+        return false;
+      }
+      throw getMeError;
+    }
     
-    bot.getMe().then((info) => {
-      botInfo = info;
-      console.log(`✅ Telegram-бот инициализирован: @${info.username}`);
-      console.log(`🔗 Ссылка на бота: https://t.me/${info.username}`);
-      console.log(`📡 Polling активен, бот готов к работе`);
-    }).catch((error) => {
-      console.error('❌ Ошибка получения информации о боте:', error.message);
-      console.error('Детали ошибки:', error);
-    });
+    // Регистрируем обработчики ДО запуска polling
+    console.log('📝 Регистрация обработчиков...');
+    registerBotHandlers();
+    
+    // Теперь запускаем polling
+    console.log('📡 Запуск polling...');
+    try {
+      await bot.startPolling();
+      console.log('✅ Polling активен, бот готов к работе');
+    } catch (pollingError) {
+      console.error('❌ Ошибка запуска polling:', pollingError.message);
+      throw pollingError;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Ошибка инициализации Telegram-бота:', error.message);
+    console.error('Тип ошибки:', error.constructor.name);
+    console.error('Код ошибки:', error.code);
+    
+    if (error.response) {
+      console.error('Ответ API:', error.response.body || error.response);
+    }
+    
+    if (error.stack) {
+      console.error('Стек ошибки (первые 1000 символов):', error.stack.substring(0, 1000));
+    }
+    
+    // Пытаемся остановить polling, если он был запущен
+    if (bot) {
+      try {
+        await bot.stopPolling();
+      } catch (stopError) {
+        // Игнорируем ошибку остановки
+      }
+    }
+    
+    bot = null;
+    return false;
+  }
+}
+
+// Регистрация обработчиков бота
+function registerBotHandlers() {
+  if (!bot) {
+    console.error('❌ Бот не инициализирован, обработчики не зарегистрированы');
+    return;
+  }
+
+  console.log('📝 Регистрация обработчиков бота...');
 
     bot.on('polling_error', (error) => {
       console.error('❌ Ошибка polling Telegram бота:', error.message || error);
       if (error.code === 'EFATAL') {
-        console.error('Критическая ошибка polling, перезапуск...');
-        setTimeout(() => {
+      console.error('Критическая ошибка polling, перезапуск через 5 секунд...');
+      setTimeout(async () => {
           if (bot) {
-            bot.stopPolling().then(() => {
-              bot.startPolling();
+          try {
+            await bot.stopPolling();
+            await bot.startPolling();
               console.log('🔄 Polling перезапущен');
-            }).catch(err => {
+          } catch (err) {
               console.error('Ошибка перезапуска polling:', err);
-            });
+          }
           }
         }, 5000);
       }
     });
     
-  } catch (error) {
-    console.error('❌ Ошибка инициализации Telegram-бота:', error.message);
-    console.error('Детали ошибки:', error);
-    bot = null;
-  }
-} else {
-  console.log('⚠️ TELEGRAM_BOT_TOKEN не установлен, бот не будет работать');
+  bot.on('error', (error) => {
+    console.error('❌ Общая ошибка Telegram бота:', error.message || error);
+  });
+
+  // Регистрируем обработчики команд
+  registerCommandHandlers();
+  
+  console.log('✅ Все обработчики зарегистрированы');
 }
 
 const userStates = new Map();
@@ -76,6 +161,27 @@ const RegistrationState = {
   WAITING_PHONE: 'waiting_phone',
   WAITING_START_DATE: 'waiting_start_date',
   WAITING_END_DATE: 'waiting_end_date',
+  CONFIRMING: 'confirming'
+};
+
+const EditState = {
+  IDLE: 'idle',
+  WAITING_FIELD: 'waiting_field',
+  WAITING_VALUE: 'waiting_value'
+};
+
+const TaskSubmissionState = {
+  IDLE: 'idle',
+  WAITING_SOLUTION: 'waiting_solution'
+};
+
+const TaskCreationState = {
+  IDLE: 'idle',
+  WAITING_STUDENT: 'waiting_student',
+  WAITING_TITLE: 'waiting_title',
+  WAITING_DESCRIPTION: 'waiting_description',
+  WAITING_DEADLINE: 'waiting_deadline',
+  WAITING_REFERENCE_LINK: 'waiting_reference_link',
   CONFIRMING: 'confirming'
 };
 
@@ -137,7 +243,8 @@ function getRegisteredMenu() {
   return {
     reply_markup: {
       keyboard: [
-        [{ text: '📅 Моя практика' }],
+        [{ text: '📅 Моя практика' }, { text: '📋 Задания' }],
+        [{ text: '✏️ Редактировать данные' }, { text: '🔔 Уведомления' }],
         [{ text: 'ℹ️ Информация' }, { text: '📞 Контакты' }]
       ],
       resize_keyboard: true
@@ -187,18 +294,17 @@ async function getStudentPractice(telegramId) {
     }
 
     console.log('Найден StudentUser:', studentUser.id, 'Заявок:', studentUser.applications.length);
-    console.log('studentId:', studentUser.studentId);
 
     const approvedApplication = studentUser.applications.find(app => app.status === 'APPROVED');
     
     if (approvedApplication) {
       console.log('Найдена одобренная заявка:', approvedApplication.id);
       
-      if (studentUser.studentId) {
-        console.log('Ищем студента с ID:', studentUser.studentId);
+      if (studentUser.student) {
+        console.log('Ищем студента с ID:', studentUser.student.id);
         try {
           const student = await prisma.student.findUnique({
-            where: { id: studentUser.studentId },
+            where: { id: studentUser.student.id },
             include: {
               institution: true
             }
@@ -282,6 +388,30 @@ function calculateDaysRemaining(endDate) {
   return diffDays;
 }
 
+// Функция для экранирования специальных символов Markdown
+function escapeMarkdown(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/\*/g, '\\*')
+    .replace(/_/g, '\\_')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/~/g, '\\~')
+    .replace(/`/g, '\\`')
+    .replace(/>/g, '\\>')
+    .replace(/#/g, '\\#')
+    .replace(/\+/g, '\\+')
+    .replace(/-/g, '\\-')
+    .replace(/=/g, '\\=')
+    .replace(/\|/g, '\\|')
+    .replace(/\{/g, '\\{')
+    .replace(/\}/g, '\\}')
+    .replace(/\./g, '\\.')
+    .replace(/!/g, '\\!');
+}
+
 function formatPracticeInfo(practiceData) {
   try {
     console.log('formatPracticeInfo вызвана с practiceData:', JSON.stringify(practiceData, null, 2));
@@ -322,19 +452,24 @@ function formatPracticeInfo(practiceData) {
             : 'Заявка отклонена администратором.';
         }
         
+        let escapedStatusMessage = statusMessage;
+        if (app.rejectionReason) {
+          escapedStatusMessage = `Заявка отклонена\\. Причина: ${escapeMarkdown(app.rejectionReason)}`;
+        }
+        
         const result = `
 ⏳ *Информация о вашей заявке*
 
 👤 *ФИО:*
-${app.lastName || ''} ${app.firstName || ''}${app.middleName ? ' ' + app.middleName : ''}
+${escapeMarkdown(app.lastName || '')} ${escapeMarkdown(app.firstName || '')}${app.middleName ? ' ' + escapeMarkdown(app.middleName) : ''}
 
-📚 *Тип практики:* ${practiceTypeNames[app.practiceType] || app.practiceType || 'Не указан'}
-🏫 *Учебное заведение:* ${app.institutionName || 'Не указано'}
-📅 *Период:* ${formatDate(app.startDate)} - ${formatDate(app.endDate)}
+📚 *Тип практики:* ${escapeMarkdown(practiceTypeNames[app.practiceType] || app.practiceType || 'Не указан')}
+🏫 *Учебное заведение:* ${escapeMarkdown(app.institutionName || 'Не указано')}
+📅 *Период:* ${escapeMarkdown(formatDate(app.startDate))} \\- ${escapeMarkdown(formatDate(app.endDate))}
 
 📊 *Статус:* ${statusText}
 
-${statusMessage}
+${escapedStatusMessage}
         `;
         console.log('formatPracticeInfo: успешно сформировано сообщение для заявки, статус:', app.status);
         return result;
@@ -382,20 +517,20 @@ ${statusMessage}
 📅 *Информация о вашей практике*
 
 👤 *ФИО:*
-${student.lastName || ''} ${student.firstName || ''}${student.middleName ? ' ' + student.middleName : ''}
+${escapeMarkdown(student.lastName || '')} ${escapeMarkdown(student.firstName || '')}${student.middleName ? ' ' + escapeMarkdown(student.middleName) : ''}
 
-📚 *Тип практики:* ${practiceTypeNames[student.practiceType] || student.practiceType || 'Не указан'}
-🏫 *Учебное заведение:* ${student.institutionName || 'Не указано'}
-📖 *Курс:* ${student.course || 'Не указан'}
-📊 *Статус:* ${statusNames[student.status] || student.status || 'Не указан'}
+📚 *Тип практики:* ${escapeMarkdown(practiceTypeNames[student.practiceType] || student.practiceType || 'Не указан')}
+🏫 *Учебное заведение:* ${escapeMarkdown(student.institutionName || 'Не указано')}
+📖 *Курс:* ${escapeMarkdown(String(student.course || 'Не указан'))}
+📊 *Статус:* ${escapeMarkdown(statusNames[student.status] || student.status || 'Не указан')}
 
 📅 *Период практики:*
-Начало: ${formatDate(student.startDate)}
-Окончание: ${formatDate(student.endDate)}
+Начало: ${escapeMarkdown(formatDate(student.startDate))}
+Окончание: ${escapeMarkdown(formatDate(student.endDate))}
 ${daysText}
 
-${student.supervisor ? `👨‍💼 *Руководитель:* ${student.supervisor}\n` : ''}
-${student.notes ? `📝 *Заметки:* ${student.notes}\n` : ''}
+${student.supervisor ? `👨‍💼 *Руководитель:* ${escapeMarkdown(student.supervisor)}\n` : ''}
+${student.notes ? `📝 *Заметки:* ${escapeMarkdown(student.notes)}\n` : ''}
         `;
         console.log('formatPracticeInfo: успешно сформировано сообщение для student');
         return result;
@@ -428,7 +563,14 @@ ${student.notes ? `📝 *Заметки:* ${student.notes}\n` : ''}
   }
 }
 
-if (bot) {
+// Функция для регистрации всех обработчиков команд
+function registerCommandHandlers() {
+  if (!bot) {
+    console.error('❌ Бот не инициализирован, обработчики не могут быть зарегистрированы');
+    return;
+  }
+
+  // Регистрация всех обработчиков команд
   bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const firstName = msg.from.first_name || 'Студент';
@@ -488,6 +630,20 @@ if (bot) {
     if (practiceData) {
       helpMessage += `
 /my_practice - Просмотр информации о вашей практике
+/tasks - Просмотр ваших заданий
+/edit - Редактировать данные заявки
+/notifications - Настройки уведомлений
+      `;
+    }
+    
+    // Админские команды
+    if (ADMIN_CHAT_IDS.includes(chatId.toString())) {
+      helpMessage += `
+      
+👑 *Админские команды:*
+/admin - Админская панель
+/pending - Заявки на рассмотрении
+/create_task - Создать задание для студента
       `;
     } else {
       helpMessage += `
@@ -573,6 +729,28 @@ ${botLink}
     }
   });
 
+
+  bot.onText(/\/edit/, async (msg) => {
+    await handleEditData(msg.chat.id);
+  });
+
+  bot.onText(/\/notifications/, async (msg) => {
+    await handleNotificationsSettings(msg.chat.id);
+  });
+
+  bot.onText(/\/tasks/, async (msg) => {
+    await handleTasksList(msg.chat.id);
+  });
+
+  // Админские команды
+  bot.onText(/\/admin/, async (msg) => {
+    await handleAdminCommand(msg);
+  });
+
+  bot.onText(/\/pending/, async (msg) => {
+    await handlePendingApplications(msg);
+  });
+
   bot.onText(/\/my_practice/, async (msg) => {
     const chatId = msg.chat.id;
     
@@ -617,13 +795,7 @@ ${botLink}
         try {
           await bot.sendMessage(chatId, practiceInfo, { 
             parse_mode: 'Markdown',
-            reply_markup: {
-              keyboard: [
-                [{ text: '📅 Моя практика' }],
-                [{ text: 'ℹ️ Информация' }, { text: '📞 Контакты' }]
-              ],
-              resize_keyboard: true
-            }
+            ...getRegisteredMenu()
           });
           console.log('Информация о практике успешно отправлена');
         } catch (sendError) {
@@ -812,13 +984,7 @@ ${botLink}
             try {
               await bot.sendMessage(chatId, practiceInfo, { 
                 parse_mode: 'Markdown',
-                reply_markup: {
-                  keyboard: [
-                    [{ text: '📅 Моя практика' }],
-                    [{ text: 'ℹ️ Информация' }, { text: '📞 Контакты' }]
-                  ],
-                  resize_keyboard: true
-                }
+                ...getRegisteredMenu()
               });
               console.log('Информация о практике успешно отправлена');
             } catch (sendError) {
@@ -861,6 +1027,18 @@ ${botLink}
         }
         return;
       }
+      if (text === '✏️ Редактировать данные') {
+        await handleEditData(chatId);
+        return;
+      }
+      if (text === '🔔 Уведомления') {
+        await handleNotificationsSettings(chatId);
+        return;
+      }
+      if (text === '📋 Задания') {
+        await handleTasksList(chatId);
+        return;
+      }
       if (text === 'ℹ️ Информация') {
         await handleInfoCommand(msg);
         return;
@@ -873,6 +1051,21 @@ ${botLink}
           { parse_mode: 'Markdown', ...menu }
         );
         return;
+      }
+      // Админские кнопки
+      if (ADMIN_CHAT_IDS.includes(chatId.toString())) {
+        if (text === '📋 Заявки на рассмотрении') {
+          await handlePendingApplications(msg);
+          return;
+        }
+        if (text === '📊 Статистика') {
+          await handleAdminCommand(msg);
+          return;
+        }
+        if (text === '🔙 Главное меню') {
+          await bot.sendMessage(chatId, 'Главное меню', getMainMenu());
+          return;
+        }
       }
       return;
     }
@@ -1069,6 +1262,64 @@ ${botLink}
           await showConfirmation(chatId, state.data);
           break;
           
+        case EditState.WAITING_VALUE:
+          await handleEditValue(chatId, text, state.data);
+          break;
+        case TaskSubmissionState.WAITING_SOLUTION:
+          await handleTaskSubmitSolution(chatId, text, state.data);
+          break;
+        case TaskCreationState.WAITING_STUDENT:
+          await handleTaskCreationStudent(chatId, text, state.data);
+          break;
+        case TaskCreationState.WAITING_TITLE:
+          state.data.title = text.trim();
+          state.state = TaskCreationState.WAITING_DESCRIPTION;
+          await bot.sendMessage(chatId, 
+            'Введите *описание задания*:',
+            { parse_mode: 'Markdown' }
+          );
+          break;
+        case TaskCreationState.WAITING_DESCRIPTION:
+          state.data.description = text.trim();
+          state.state = TaskCreationState.WAITING_DEADLINE;
+          await bot.sendMessage(chatId, 
+            'Введите *дедлайн задания* в формате ДД.ММ.ГГГГ (например, 31.12.2024):',
+            { parse_mode: 'Markdown' }
+          );
+          break;
+        case TaskCreationState.WAITING_DEADLINE:
+          const deadline = parseDate(text.trim());
+          if (!deadline) {
+            await bot.sendMessage(chatId, '❌ Неверный формат даты. Используйте формат ДД.ММ.ГГГГ (например, 31.12.2024):');
+            return;
+          }
+          if (deadline < new Date()) {
+            await bot.sendMessage(chatId, '❌ Дедлайн не может быть в прошлом. Попробуйте еще раз:');
+            return;
+          }
+          state.data.deadline = deadline;
+          state.state = TaskCreationState.WAITING_REFERENCE_LINK;
+          await bot.sendMessage(chatId, 
+            'Введите *ссылку на материалы* (GitHub, документация и т.д.) или отправьте "-" чтобы пропустить:',
+            { parse_mode: 'Markdown' }
+          );
+          break;
+        case TaskCreationState.WAITING_REFERENCE_LINK:
+          if (text.trim() !== '-') {
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const urls = text.match(urlRegex);
+            if (!urls || urls.length === 0) {
+              await bot.sendMessage(chatId, '❌ Некорректная ссылка. Попробуйте еще раз или отправьте "-":');
+              return;
+            }
+            state.data.referenceLink = urls[0];
+          } else {
+            state.data.referenceLink = null;
+          }
+          state.state = TaskCreationState.CONFIRMING;
+          await showTaskConfirmation(chatId, state.data);
+          break;
+          
         default:
           break;
       }
@@ -1083,8 +1334,15 @@ ${botLink}
   bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data;
-    
-    await bot.answerCallbackQuery(query.id);
+
+    console.log(`🔔 Callback query получен: chatId=${chatId}, data="${data}"`);
+
+    // Безопасно отвечаем на callback, чтобы не падать, если Telegram вернул 400
+    try {
+      await bot.answerCallbackQuery(query.id);
+    } catch (err) {
+      console.warn('Ошибка answerCallbackQuery (обычно из‑за старой кнопки):', err?.message || err);
+    }
     
     const state = userStates.get(chatId);
     
@@ -1161,6 +1419,52 @@ ${botLink}
       return;
     }
     
+    // Обработка кнопок заданий (не требует состояния регистрации)
+    if (data.startsWith('task_view_')) {
+      console.log(`📋 Обработка task_view_: taskId=${data.replace('task_view_', '')}`);
+      const taskId = data.replace('task_view_', '');
+      try {
+        await handleTaskView(chatId, taskId);
+      } catch (error) {
+        console.error('Ошибка в handleTaskView:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка при просмотре задания.', getRegisteredMenu());
+      }
+      return;
+    }
+    
+    if (data.startsWith('task_submit_')) {
+      console.log(`📤 Обработка task_submit_: taskId=${data.replace('task_submit_', '')}`);
+      const taskId = data.replace('task_submit_', '');
+      try {
+        await handleTaskSubmitStart(chatId, taskId);
+      } catch (error) {
+        console.error('Ошибка в handleTaskSubmitStart:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка при отправке решения.', getRegisteredMenu());
+      }
+      return;
+    }
+    
+    if (data === 'tasks_list') {
+      console.log(`📋 Обработка tasks_list`);
+      try {
+        await handleTasksList(chatId);
+      } catch (error) {
+        console.error('Ошибка в handleTasksList:', error);
+        await bot.sendMessage(chatId, '❌ Произошла ошибка при получении списка заданий.', getRegisteredMenu());
+      }
+      return;
+    }
+    
+    if (data === 'task_submit_cancel') {
+      const state = userStates.get(chatId);
+      if (state) {
+        state.state = TaskSubmissionState.IDLE;
+        state.data = {};
+      }
+      await bot.sendMessage(chatId, '❌ Отправка решения отменена.', getRegisteredMenu());
+      return;
+    }
+    
     if (!state) return;
     
     try {
@@ -1204,13 +1508,51 @@ ${botLink}
       } else if (data === 'cancel_registration') {
         clearUserState(chatId);
         await bot.sendMessage(chatId, '❌ Регистрация отменена.', getMainMenu());
+      } else if (data.startsWith('edit_approved_')) {
+        const appId = data.replace('edit_approved_', '');
+        // Закрываем предыдущее сообщение с предупреждением
+        try {
+          await bot.editMessageReplyMarkup(
+            { inline_keyboard: [] },
+            { chat_id: chatId, message_id: query.message.message_id }
+          );
+        } catch (err) {
+          console.warn('Не удалось закрыть предыдущее сообщение:', err.message);
+        }
+        await handleEditApprovedApplication(chatId, appId);
+      } else if (data.startsWith('edit_')) {
+        await handleEditCallback(query, data, chatId);
+      } else if (data === 'edit_cancel') {
+        await bot.sendMessage(chatId, '❌ Редактирование отменено.', getRegisteredMenu());
+      } else if (data === 'task_confirm_create') {
+        const state = userStates.get(chatId);
+        if (state && state.state === TaskCreationState.CONFIRMING) {
+          await confirmTaskCreation(chatId, state.data);
+        }
+      } else if (data === 'task_cancel_create') {
+        const state = userStates.get(chatId);
+        if (state) {
+          state.state = TaskCreationState.IDLE;
+          state.data = {};
+        }
+        await bot.sendMessage(chatId, '❌ Создание задания отменено.', getMainMenu());
       }
     } catch (error) {
-      console.error('Ошибка обработки callback:', error);
-      await bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте начать заново командой /register');
+      console.error('❌ Ошибка обработки callback:', error);
+      console.error('Stack:', error.stack);
+      try {
+        await bot.sendMessage(chatId, '❌ Произошла ошибка. Попробуйте начать заново командой /register');
+      } catch (sendError) {
+        console.error('Ошибка отправки сообщения об ошибке:', sendError);
+      }
       clearUserState(chatId);
     }
   });
+
+  startDailyNotifications();
+  
+  console.log('✅ Все обработчики Telegram-бота зарегистрированы');
+}
 
   // Показать подтверждение данных
   async function showConfirmation(chatId, data) {
@@ -1218,20 +1560,20 @@ ${botLink}
       '✅ Проверьте ваши данные:',
       '',
       '👤 ФИО:',
-      `${data.lastName} ${data.firstName}${data.middleName ? ' ' + data.middleName : ''}`,
+      `${escapeMarkdown(data.lastName || '')} ${escapeMarkdown(data.firstName || '')}${data.middleName ? ' ' + escapeMarkdown(data.middleName) : ''}`,
       '',
       '📚 Практика:',
-      `Тип: ${practiceTypeNames[data.practiceType]}`,
-      `Учебное заведение: ${institutionTypeNames[data.institutionType]} "${data.institutionName}"`,
-      `Курс: ${data.course}`,
+      `Тип: ${escapeMarkdown(practiceTypeNames[data.practiceType] || data.practiceType || 'Не указан')}`,
+      `Учебное заведение: ${escapeMarkdown(institutionTypeNames[data.institutionType] || '')} "${escapeMarkdown(data.institutionName || '')}"`,
+      `Курс: ${escapeMarkdown(String(data.course || 'Не указан'))}`,
       '',
       '📅 Даты:',
-      `Начало: ${formatDate(data.startDate)}`,
-      `Окончание: ${formatDate(data.endDate)}`,
+      `Начало: ${escapeMarkdown(formatDate(data.startDate))}`,
+      `Окончание: ${escapeMarkdown(formatDate(data.endDate))}`,
       '',
       '📧 Контакты:',
-      `Email: ${data.email || 'Не указан'}`,
-      `Телефон: ${data.phone || 'Не указан'}`,
+      `Email: ${escapeMarkdown(data.email || 'Не указан')}`,
+      `Телефон: ${escapeMarkdown(data.phone || 'Не указан')}`,
       '',
       'Подтвердите регистрацию:'
     ].join('\n');
@@ -1284,23 +1626,14 @@ ${botLink}
         return;
       }
 
+      // Если пользователь с таким telegramId уже есть, мы НЕ выходим,
+      // а позволяем повторно создать заявку. Старый аккаунт ниже будет очищен.
       const existingUser = await prisma.studentUser.findFirst({
         where: {
           telegramId: data.telegramId
         }
       });
-      
-      if (existingUser) {
-        console.log('Пользователь уже зарегистрирован:', existingUser.id);
-        await bot.sendMessage(chatId, 
-          '⚠️ Вы уже зарегистрированы в системе!\n\n' +
-          'Используйте команду /my_practice для просмотра ваших заявок.',
-          getRegisteredMenu()
-        );
-        clearUserState(chatId);
-        return;
-      }
-      
+
       let institution = await prisma.institution.findFirst({
         where: {
           name: data.institutionName,
@@ -1323,7 +1656,10 @@ ${botLink}
       const username = `${data.lastName} ${data.firstName}`.trim();
       let email = data.email || `telegram_${chatId}@practicehub.local`;
 
-      const existingByTelegram = await prisma.studentUser.findUnique({
+      // Проверяем, есть ли уже пользователь с таким telegramId.
+      // Используем findFirst, так как в актуальной схеме Prisma
+      // уникальным полем может быть только telegramId, а не email/username.
+      const existingByTelegram = await prisma.studentUser.findFirst({
         where: { telegramId: data.telegramId }
       });
       if (existingByTelegram) {
@@ -1335,7 +1671,10 @@ ${botLink}
         }
       }
 
-      const existingByEmail = await prisma.studentUser.findUnique({ where: { email } });
+      // В схеме StudentUser email не помечен как @unique,
+      // поэтому используем findFirst вместо findUnique, чтобы избежать
+      // ошибки "needs at least one of `id` or `telegramId` arguments".
+      const existingByEmail = await prisma.studentUser.findFirst({ where: { email } });
       if (existingByEmail) {
         try {
           console.log('Удаляем старый аккаунт по email для повторной регистрации:', existingByEmail.id);
@@ -1355,18 +1694,14 @@ ${botLink}
         }
       }
       
-      const randomPassword = Math.random().toString(36).slice(-12);
-      const bcrypt = (await import('bcryptjs')).default;
-      const hashedPassword = await bcrypt.hash(randomPassword, 10);
-      
       console.log('Создание StudentUser...');
       try {
+        // Если existingUser был, после очистки дублей он уже удалён,
+        // поэтому просто создаём (или, если хочешь, можно было бы reuse).
         const studentUser = await prisma.studentUser.create({
           data: {
             username,
             email,
-            password: hashedPassword,
-            studentId: null,
             telegramId: data.telegramId,
             privacyAccepted: data.privacyAccepted,
             privacyAcceptedAt: data.privacyAcceptedAt
@@ -1382,6 +1717,7 @@ ${botLink}
             firstName: data.firstName,
             middleName: data.middleName,
             practiceType: data.practiceType,
+            institutionType: data.institutionType,
             institutionName: data.institutionName,
             course: data.course,
             email: data.email,
@@ -1403,44 +1739,35 @@ ${botLink}
           ? `Ваш Telegram: @${data.telegramUsername}` 
           : `Ваш chatId: ${chatId}`;
 
-        const successLines = [
-          '🎉 Регистрация успешно завершена!',
-          '',
-          'Ваша заявка на практику отправлена на рассмотрение.',
-          '',
-          'Детали заявки:',
-          `ID: ${application.id.substring(0, 8)}...`,
-          usernameLine,
-          '',
-          'Что дальше?',
-          '• Нажмите "📅 Моя практика" или используйте /my_practice, чтобы увидеть статус заявки',
-          '• Мы пришлём уведомление, когда администратор рассмотрит заявку'
-        ];
-
-        const successMessage = successLines.join('\n');
+        const successMessage = `🎉 *Регистрация успешно завершена\\!*\n\n` +
+          `✅ Ваша заявка на практику отправлена на рассмотрение\\.\n\n` +
+          `📋 *Детали заявки:*\n` +
+          `🆔 ID: ${escapeMarkdown(application.id.substring(0, 8))}\\.\\.\\.\n` +
+          `👤 ${escapeMarkdown(usernameLine)}\n` +
+          `📚 Тип практики: ${escapeMarkdown(practiceTypeNames[data.practiceType] || data.practiceType)}\n` +
+          `🏫 Учебное заведение: ${escapeMarkdown(data.institutionName)}\n` +
+          `📅 Период: ${escapeMarkdown(formatDate(data.startDate))} \\- ${escapeMarkdown(formatDate(data.endDate))}\n\n` +
+          `💡 *Что дальше\\?*\n` +
+          `• Нажмите "📅 Моя практика" или используйте /my_practice, чтобы увидеть статус заявки\n` +
+          `• Мы пришлём уведомление, когда администратор рассмотрит заявку`;
         
         await bot.sendMessage(chatId, successMessage, { 
-          reply_markup: {
-            keyboard: [
-              [{ text: '📅 Моя практика' }],
-              [{ text: 'ℹ️ Информация' }, { text: '📞 Контакты' }]
-            ],
-            resize_keyboard: true
-          }
+          parse_mode: 'Markdown',
+          ...getRegisteredMenu()
         });
         
         if (ADMIN_CHAT_IDS.length) {
           const adminMessageLines = [
             '🔔 Новая заявка на практику',
             '',
-            `Студент: ${data.lastName} ${data.firstName}${data.middleName ? ' ' + data.middleName : ''}`,
-            `Тип: ${practiceTypeNames[data.practiceType]}`,
-            `Учебное заведение: ${data.institutionName}`,
-            `Период: ${formatDate(data.startDate)} - ${formatDate(data.endDate)}`,
-            `ID заявки: ${application.id}`,
+            `Студент: ${escapeMarkdown(data.lastName || '')} ${escapeMarkdown(data.firstName || '')}${data.middleName ? ' ' + escapeMarkdown(data.middleName) : ''}`,
+            `Тип: ${escapeMarkdown(practiceTypeNames[data.practiceType] || data.practiceType)}`,
+            `Учебное заведение: ${escapeMarkdown(data.institutionName || '')}`,
+            `Период: ${escapeMarkdown(formatDate(data.startDate))} \\- ${escapeMarkdown(formatDate(data.endDate))}`,
+            `ID заявки: ${escapeMarkdown(application.id)}`,
             `Согласие на обработку данных: ${data.privacyAccepted ? '✅ Да' : '❌ Нет'}`,
             '',
-            'Одобрить или отклонить заявку?'
+            'Одобрить или отклонить заявку\\?'
           ];
           const adminMessage = adminMessageLines.join('\n');
 
@@ -1585,10 +1912,11 @@ ${botLink}
       }
     });
 
-    if (application.studentUser && application.studentUser.studentId === null) {
-      await prisma.studentUser.update({
-        where: { id: application.studentUserId },
-        data: { studentId: student.id }
+    // Связываем созданного студента с учетной записью StudentUser через поле userId в Student
+    if (application.studentUserId) {
+      await prisma.student.update({
+        where: { id: student.id },
+        data: { userId: application.studentUserId }
       });
     }
 
@@ -1646,9 +1974,1154 @@ ${botLink}
     return date;
   }
 
-  startDailyNotifications();
+
+// Функция для редактирования данных
+async function handleEditData(chatId) {
+  try {
+    await bot.sendChatAction(chatId, 'typing');
+    
+    const studentUser = await prisma.studentUser.findFirst({
+      where: { telegramId: chatId.toString() },
+      include: {
+        applications: {
+          where: { status: { in: ['PENDING', 'APPROVED'] } },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        }
+      }
+    });
+
+    if (!studentUser || studentUser.applications.length === 0) {
+      await bot.sendMessage(chatId, 
+        '❌ У вас нет активной заявки для редактирования.\n\n' +
+        'Сначала подайте заявку через /register',
+        getRegisteredMenu()
+      );
+      return;
+    }
+
+    const application = studentUser.applications[0];
+    
+    // Разрешаем редактирование даже одобренных заявок, но с предупреждением
+    if (application.status === 'APPROVED') {
+      const confirmKeyboard = {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ Да, редактировать', callback_data: `edit_approved_${application.id}` },
+              { text: '❌ Отмена', callback_data: 'edit_cancel' }
+            ]
+          ]
+        }
+      };
+      
+      await bot.sendMessage(chatId, 
+        '⚠️ *Внимание\\!*\n\n' +
+        'Ваша заявка уже одобрена\\. Редактирование может потребовать повторного рассмотрения администратором\\.\n\n' +
+        'Продолжить редактирование\\?',
+        { parse_mode: 'Markdown', ...confirmKeyboard }
+      );
+      return;
+    }
+
+    const editKeyboard = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📧 Email', callback_data: `edit_email_${application.id}` }],
+          [{ text: '📱 Телефон', callback_data: `edit_phone_${application.id}` }],
+          [{ text: '📅 Даты практики', callback_data: `edit_dates_${application.id}` }],
+          [{ text: '🏫 Учебное заведение', callback_data: `edit_institution_${application.id}` }],
+          [{ text: '📚 Курс', callback_data: `edit_course_${application.id}` }],
+          [{ text: '❌ Отмена', callback_data: 'edit_cancel' }]
+        ]
+      }
+    };
+
+    const currentInfo = `
+✏️ *Редактирование заявки*
+
+Текущие данные:
+📧 Email: ${escapeMarkdown(application.email || 'Не указан')}
+📱 Телефон: ${escapeMarkdown(application.phone || 'Не указан')}
+📅 Период: ${escapeMarkdown(formatDate(application.startDate))} \\- ${escapeMarkdown(formatDate(application.endDate))}
+🏫 Учебное заведение: ${escapeMarkdown(application.institutionName || 'Не указано')}
+📚 Курс: ${escapeMarkdown(String(application.course || 'Не указан'))}
+
+Выберите, что хотите изменить:
+    `;
+
+    await bot.sendMessage(chatId, currentInfo, {
+      parse_mode: 'Markdown',
+      ...editKeyboard
+    });
+  } catch (error) {
+    console.error('Ошибка редактирования данных:', error);
+    await bot.sendMessage(chatId, 
+      '❌ Произошла ошибка.\n\n' +
+      'Пожалуйста, попробуйте позже.',
+      getRegisteredMenu()
+    );
+  }
+}
+
+// Функция для настроек уведомлений
+async function handleNotificationsSettings(chatId) {
+  try {
+    await bot.sendChatAction(chatId, 'typing');
+    
+    const studentUser = await prisma.studentUser.findFirst({
+      where: { telegramId: chatId.toString() }
+    });
+
+    if (!studentUser) {
+      await bot.sendMessage(chatId, 
+        '❌ Вы не зарегистрированы в системе.\n\n' +
+        'Используйте /register для регистрации.',
+        getMainMenu()
+      );
+      return;
+    }
+
+    const notificationsInfo = `
+🔔 *Настройки уведомлений*
+
+Вы будете получать уведомления о:
+✅ Изменении статуса заявки
+✅ Одобрении или отклонении заявки
+⏰ Ежедневные напоминания о сроках практики (за 30 дней до окончания)
+📅 Напоминания о важных событиях
+
+*Текущие настройки:*
+🔔 Уведомления: Включены
+📧 Email уведомления: ${studentUser.email ? 'Настроен' : 'Не настроен'}
+
+*Примечание:* Настройки уведомлений управляются администратором системы. Если вы хотите изменить настройки, обратитесь к администратору.
+    `;
+
+    await bot.sendMessage(chatId, notificationsInfo, {
+      parse_mode: 'Markdown',
+      ...getRegisteredMenu()
+    });
+  } catch (error) {
+    console.error('Ошибка настроек уведомлений:', error);
+    await bot.sendMessage(chatId, 
+      '❌ Произошла ошибка.\n\n' +
+      'Пожалуйста, попробуйте позже.',
+      getRegisteredMenu()
+    );
+  }
+}
+
+// Сохранение отредактированного значения
+async function handleEditValue(chatId, text, editData) {
+  try {
+    const { field, applicationId } = editData;
+    let updateData = {};
+    let validationError = null;
+
+    switch (field) {
+      case 'email':
+        if (text.trim() === '-') {
+          updateData.email = null;
+        } else {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(text.trim())) {
+            validationError = '❌ Неверный формат email. Попробуйте еще раз или отправьте "-":';
+          } else {
+            updateData.email = text.trim();
+          }
+        }
+        break;
+
+      case 'phone':
+        updateData.phone = text.trim() === '-' ? null : text.trim();
+        break;
+
+      case 'course':
+        const course = parseInt(text);
+        if (isNaN(course) || course < 1 || course > 10) {
+          validationError = '❌ Курс должен быть числом от 1 до 10. Попробуйте еще раз:';
+        } else {
+          updateData.course = course;
+        }
+        break;
+
+      case 'institutionName':
+        if (!text || text.trim().length < 3) {
+          validationError = '❌ Название учебного заведения должно содержать минимум 3 символа. Попробуйте еще раз:';
+        } else {
+          updateData.institutionName = text.trim();
+        }
+        break;
+
+      case 'startDate':
+        const startDate = parseDate(text.trim());
+        if (!startDate) {
+          validationError = '❌ Неверный формат даты. Используйте формат ДД.ММ.ГГГГ (например, 01.09.2024):';
+        } else {
+          // Получаем текущую заявку для проверки endDate
+          const application = await prisma.practiceApplication.findUnique({
+            where: { id: applicationId }
+          });
+          
+          if (application && application.endDate && startDate >= application.endDate) {
+            validationError = '❌ Дата начала должна быть раньше даты окончания. Попробуйте еще раз:';
+          } else {
+            updateData.startDate = startDate;
+            // Сохраняем startDate для следующего шага
+            editData.startDate = startDate;
+            // Запрашиваем endDate
+            editData.field = 'endDate';
+            const state = userStates.get(chatId);
+            if (state) {
+              state.data = editData;
+            }
+            await bot.sendMessage(chatId, 
+              'Теперь введите новую *дату окончания практики* в формате ДД.ММ.ГГГГ:',
+              { parse_mode: 'Markdown' }
+            );
+            return;
+          }
+        }
+        break;
+
+      case 'endDate':
+        const endDate = parseDate(text.trim());
+        if (!endDate) {
+          validationError = '❌ Неверный формат даты. Используйте формат ДД.ММ.ГГГГ (например, 30.12.2024):';
+        } else {
+          // Получаем текущую заявку или используем сохраненный startDate
+          let startDate = editData.startDate;
+          if (!startDate) {
+            const application = await prisma.practiceApplication.findUnique({
+              where: { id: applicationId }
+            });
+            startDate = application?.startDate;
+          }
+          
+          if (startDate && endDate <= startDate) {
+            validationError = '❌ Дата окончания должна быть позже даты начала. Попробуйте еще раз:';
+          } else {
+            updateData.endDate = endDate;
+            // Если был обновлен startDate, добавляем его тоже
+            if (editData.startDate) {
+              updateData.startDate = editData.startDate;
+            }
+          }
+        }
+        break;
+    }
+
+    if (validationError) {
+      await bot.sendMessage(chatId, validationError);
+      return;
+    }
+
+    // Получаем текущую заявку для проверки статуса
+    const currentApplication = await prisma.practiceApplication.findUnique({
+      where: { id: applicationId }
+    });
+
+    // Если заявка была одобрена, переводим её обратно в PENDING для повторного рассмотрения
+    if (currentApplication && currentApplication.status === 'APPROVED') {
+      updateData.status = 'PENDING';
+      updateData.notes = (currentApplication.notes || '') + '\n[Заявка отредактирована после одобрения, требуется повторное рассмотрение]';
+    }
+
+    // Сохраняем изменения в базу данных
+    const updatedApplication = await prisma.practiceApplication.update({
+      where: { id: applicationId },
+      data: updateData
+    });
+
+    // Очищаем состояние редактирования
+    const state = userStates.get(chatId);
+    if (state) {
+      state.state = RegistrationState.IDLE;
+      state.data = {};
+    }
+
+    // Формируем понятное название поля
+    const fieldNames = {
+      email: 'Email',
+      phone: 'Телефон',
+      course: 'Курс',
+      institutionName: 'Учебное заведение',
+      startDate: 'Дата начала',
+      endDate: 'Дата окончания'
+    };
+
+    const fieldName = fieldNames[field] || field;
+    let newValue = updateData[field];
+    
+    if (field === 'startDate' || field === 'endDate') {
+      newValue = formatDate(newValue);
+    } else if (newValue === null || newValue === undefined) {
+      newValue = 'Не указано';
+    }
+
+    // Отправляем уведомление пользователю
+    let statusMessage = '';
+    if (currentApplication && currentApplication.status === 'APPROVED' && updatedApplication.status === 'PENDING') {
+      statusMessage = `\n⚠️ *Внимание:* Заявка переведена в статус "На рассмотрении" для повторного рассмотрения администратором.\n\n`;
+    }
+
+    await bot.sendMessage(chatId, 
+      `✅ *Данные успешно обновлены\\!*\n\n` +
+      `📝 *Изменено поле:* ${escapeMarkdown(fieldName)}\n` +
+      `🆕 *Новое значение:* ${escapeMarkdown(newValue)}\n\n` +
+      `📋 *Детали заявки:*\n` +
+      `ID: ${escapeMarkdown(applicationId.substring(0, 8))}\\.\\.\\.\n` +
+      `Статус: ${updatedApplication.status === 'PENDING' ? '⏳ На рассмотрении' : updatedApplication.status === 'APPROVED' ? '✅ Одобрена' : '❌ Отклонена'}` +
+      statusMessage +
+      `\nИспользуйте /my_practice для просмотра обновленной информации\\.`,
+      { parse_mode: 'Markdown', ...getRegisteredMenu() }
+    );
+
+    // Уведомляем администраторов об изменении заявки
+    if (ADMIN_CHAT_IDS.length > 0) {
+      const studentUser = await prisma.studentUser.findFirst({
+        where: { telegramId: chatId.toString() }
+      });
+
+      let adminStatusNote = '';
+      if (currentApplication && currentApplication.status === 'APPROVED' && updatedApplication.status === 'PENDING') {
+        adminStatusNote = `\n⚠️ *Важно:* Заявка была одобрена, но после редактирования переведена в статус "На рассмотрении". Требуется повторное рассмотрение.\n\n`;
+      }
+
+      const adminMessage = `🔔 *Заявка была отредактирована*\n\n` +
+        `👤 *Студент:* ${escapeMarkdown(updatedApplication.lastName || '')} ${escapeMarkdown(updatedApplication.firstName || '')}\n` +
+        `📝 *Изменено поле:* ${escapeMarkdown(fieldName)}\n` +
+        `🆕 *Новое значение:* ${escapeMarkdown(newValue)}\n` +
+        `📋 *ID заявки:* ${escapeMarkdown(applicationId)}\n` +
+        `📊 *Статус:* ${updatedApplication.status === 'PENDING' ? '⏳ На рассмотрении' : updatedApplication.status === 'APPROVED' ? '✅ Одобрена' : '❌ Отклонена'}` +
+        adminStatusNote +
+        `Рекомендуется проверить изменения в заявке\\.`;
+
+      const adminKeyboard = {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ Одобрить', callback_data: `app_approve_${applicationId}` },
+              { text: '❌ Отклонить', callback_data: `app_reject_${applicationId}` }
+            ]
+          ]
+        }
+      };
+
+      for (const adminChatId of ADMIN_CHAT_IDS) {
+        try {
+          await bot.sendMessage(adminChatId, adminMessage, {
+            parse_mode: 'Markdown',
+            ...adminKeyboard
+          });
+        } catch (err) {
+          console.error('Ошибка отправки уведомления админу:', adminChatId, err.message);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Ошибка сохранения изменений:', error);
+    await bot.sendMessage(chatId, 
+      '❌ Произошла ошибка при сохранении изменений.\n\n' +
+      'Пожалуйста, попробуйте позже.',
+      getRegisteredMenu()
+    );
+    
+    // Очищаем состояние при ошибке
+    const state = userStates.get(chatId);
+    if (state) {
+      state.state = RegistrationState.IDLE;
+      state.data = {};
+    }
+  }
+}
+
+// Обработка редактирования одобренной заявки
+async function handleEditApprovedApplication(chatId, appId) {
+  try {
+    const application = await prisma.practiceApplication.findUnique({
+      where: { id: appId }
+    });
+
+    if (!application) {
+      await bot.sendMessage(chatId, '❌ Заявка не найдена.', getRegisteredMenu());
+      return;
+    }
+
+    const editKeyboard = {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: '📧 Email', callback_data: `edit_email_${application.id}` }],
+          [{ text: '📱 Телефон', callback_data: `edit_phone_${application.id}` }],
+          [{ text: '📅 Даты практики', callback_data: `edit_dates_${application.id}` }],
+          [{ text: '🏫 Учебное заведение', callback_data: `edit_institution_${application.id}` }],
+          [{ text: '📚 Курс', callback_data: `edit_course_${application.id}` }],
+          [{ text: '❌ Отмена', callback_data: 'edit_cancel' }]
+        ]
+      }
+    };
+
+    const currentInfo = `
+✏️ *Редактирование одобренной заявки*
+
+⚠️ *Внимание:* После редактирования заявка может потребовать повторного рассмотрения\\.
+
+Текущие данные:
+📧 Email: ${escapeMarkdown(application.email || 'Не указан')}
+📱 Телефон: ${escapeMarkdown(application.phone || 'Не указан')}
+📅 Период: ${escapeMarkdown(formatDate(application.startDate))} \\- ${escapeMarkdown(formatDate(application.endDate))}
+🏫 Учебное заведение: ${escapeMarkdown(application.institutionName || 'Не указано')}
+📚 Курс: ${escapeMarkdown(String(application.course || 'Не указан'))}
+
+Выберите, что хотите изменить:
+    `;
+
+    await bot.sendMessage(chatId, currentInfo, {
+      parse_mode: 'Markdown',
+      ...editKeyboard
+    });
+  } catch (error) {
+    console.error('Ошибка редактирования одобренной заявки:', error);
+    await bot.sendMessage(chatId, 
+      '❌ Произошла ошибка.\n\n' +
+      'Пожалуйста, попробуйте позже.',
+      getRegisteredMenu()
+    );
+  }
+}
+
+// Админская команда
+async function handleAdminCommand(msg) {
+  const chatId = msg.chat.id;
   
-  console.log('✅ Все обработчики Telegram-бота зарегистрированы');
+  if (!ADMIN_CHAT_IDS.includes(chatId.toString())) {
+    await bot.sendMessage(chatId, 
+      '❌ У вас нет прав администратора.\n\n' +
+      'Эта команда доступна только администраторам системы.',
+      getMainMenu()
+    );
+    return;
+  }
+
+  try {
+    await bot.sendChatAction(chatId, 'typing');
+
+    const pendingCount = await prisma.practiceApplication.count({
+      where: { status: 'PENDING' }
+    });
+
+    const approvedCount = await prisma.practiceApplication.count({
+      where: { status: 'APPROVED' }
+    });
+
+    const rejectedCount = await prisma.practiceApplication.count({
+      where: { status: 'REJECTED' }
+    });
+
+    const activeStudents = await prisma.student.count({
+      where: { status: 'ACTIVE' }
+    });
+
+    const adminMessage = `👨‍💼 *Панель администратора*\n\n` +
+      `📊 *Статистика заявок:*\n` +
+      `⏳ На рассмотрении: ${pendingCount}\n` +
+      `✅ Одобрено: ${approvedCount}\n` +
+      `❌ Отклонено: ${rejectedCount}\n\n` +
+      `👥 *Активных студентов:* ${activeStudents}\n\n` +
+      `*Доступные команды:*\n` +
+      `/pending - Просмотр заявок на рассмотрении\n` +
+      `/admin - Эта панель\n\n` +
+      `При новой заявке вы получите уведомление с кнопками для одобрения/отклонения.`;
+
+    const adminKeyboard = {
+      reply_markup: {
+        keyboard: [
+          [{ text: '📋 Заявки на рассмотрении' }],
+          [{ text: '📊 Статистика' }],
+          [{ text: '🔙 Главное меню' }]
+        ],
+        resize_keyboard: true
+      }
+    };
+
+    await bot.sendMessage(chatId, adminMessage, {
+      parse_mode: 'Markdown',
+      ...adminKeyboard
+    });
+  } catch (error) {
+    console.error('Ошибка админской команды:', error);
+    await bot.sendMessage(chatId, '❌ Произошла ошибка.', getMainMenu());
+  }
+}
+
+// Просмотр заявок на рассмотрении
+async function handlePendingApplications(msg) {
+  const chatId = msg.chat.id;
+  
+  if (!ADMIN_CHAT_IDS.includes(chatId.toString())) {
+    await bot.sendMessage(chatId, 
+      '❌ У вас нет прав администратора.',
+      getMainMenu()
+    );
+    return;
+  }
+
+  try {
+    await bot.sendChatAction(chatId, 'typing');
+
+    const pendingApplications = await prisma.practiceApplication.findMany({
+      where: { status: 'PENDING' },
+      include: {
+        studentUser: {
+          select: {
+            username: true,
+            email: true,
+            telegramId: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10
+    });
+
+    if (pendingApplications.length === 0) {
+      await bot.sendMessage(chatId, 
+        '✅ Нет заявок на рассмотрении.',
+        getMainMenu()
+      );
+      return;
+    }
+
+    const practiceTypeNames = {
+      EDUCATIONAL: 'Учебная',
+      PRODUCTION: 'Производственная',
+      INTERNSHIP: 'Стажировка'
+    };
+
+    let message = `📋 *Заявки на рассмотрении*\n\n`;
+    message += `Всего: ${pendingApplications.length}\n\n`;
+
+    for (const app of pendingApplications) {
+      const practiceType = practiceTypeNames[app.practiceType] || app.practiceType;
+      const date = formatDate(app.createdAt);
+      
+      message += `*${app.lastName} ${app.firstName}*\n`;
+      message += `Тип: ${practiceType}\n`;
+      message += `Учебное заведение: ${app.institutionName}\n`;
+      message += `Период: ${formatDate(app.startDate)} - ${formatDate(app.endDate)}\n`;
+      message += `Дата подачи: ${date}\n`;
+      
+      const adminKeyboard = {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ Одобрить', callback_data: `app_approve_${app.id}` },
+              { text: '❌ Отклонить', callback_data: `app_reject_${app.id}` }
+            ]
+          ]
+        }
+      };
+      
+      await bot.sendMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        ...adminKeyboard
+      });
+      
+      message = ''; // Очищаем для следующей заявки
+    }
+  } catch (error) {
+    console.error('Ошибка получения заявок:', error);
+    await bot.sendMessage(chatId, '❌ Произошла ошибка.', getMainMenu());
+  }
+}
+
+// Обработка callback для редактирования
+async function handleEditCallback(query, data, chatId) {
+  try {
+    const state = userStates.get(chatId) || initUserState(chatId);
+    
+    if (data.startsWith('edit_email_')) {
+      const appId = data.replace('edit_email_', '');
+      state.state = EditState.WAITING_VALUE;
+      state.data = { field: 'email', applicationId: appId };
+      
+      await bot.editMessageText(
+        'Введите новый *email* (или отправьте "-" чтобы оставить пустым):',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown'
+        }
+      );
+    } else if (data.startsWith('edit_phone_')) {
+      const appId = data.replace('edit_phone_', '');
+      state.state = EditState.WAITING_VALUE;
+      state.data = { field: 'phone', applicationId: appId };
+      
+      await bot.editMessageText(
+        'Введите новый *телефон* (или отправьте "-" чтобы оставить пустым):',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown'
+        }
+      );
+    } else if (data.startsWith('edit_course_')) {
+      const appId = data.replace('edit_course_', '');
+      state.state = EditState.WAITING_VALUE;
+      state.data = { field: 'course', applicationId: appId };
+      
+      await bot.editMessageText(
+        'Введите новый *курс* (от 1 до 10):',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown'
+        }
+      );
+    } else if (data.startsWith('edit_institution_')) {
+      const appId = data.replace('edit_institution_', '');
+      state.state = EditState.WAITING_VALUE;
+      state.data = { field: 'institutionName', applicationId: appId };
+      
+      await bot.editMessageText(
+        'Введите новое *название учебного заведения*:',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown'
+        }
+      );
+    } else if (data.startsWith('edit_dates_')) {
+      const appId = data.replace('edit_dates_', '');
+      state.state = EditState.WAITING_VALUE;
+      state.data = { field: 'startDate', applicationId: appId };
+      
+      await bot.editMessageText(
+        'Введите новую *дату начала практики* в формате ДД.ММ.ГГГГ (например, 01.09.2024):',
+        {
+          chat_id: chatId,
+          message_id: query.message.message_id,
+          parse_mode: 'Markdown'
+        }
+      );
+    }
+  } catch (error) {
+    console.error('Ошибка обработки редактирования:', error);
+    await bot.sendMessage(chatId, 
+      '❌ Произошла ошибка при редактировании.\n\n' +
+      'Пожалуйста, попробуйте позже.',
+      getRegisteredMenu()
+    );
+  }
+}
+
+// Функция для просмотра списка заданий
+async function handleTasksList(chatId) {
+  try {
+    await bot.sendChatAction(chatId, 'typing');
+
+    const studentUser = await prisma.studentUser.findFirst({
+      where: { telegramId: chatId.toString() },
+      include: {
+        student: true
+      }
+    });
+
+    if (!studentUser || !studentUser.student) {
+      await bot.sendMessage(chatId, 
+        '❌ Вы не зарегистрированы как студент.\n\n' +
+        'Используйте /register для регистрации.',
+        getMainMenu()
+      );
+      return;
+    }
+
+    const tasks = await prisma.task.findMany({
+      where: {
+        studentId: studentUser.student.id,
+        status: { notIn: ['DELETED'] }
+      },
+      include: {
+        submissions: {
+          where: {
+            studentId: studentUser.student.id
+          },
+          orderBy: {
+            submittedAt: 'desc'
+          },
+          take: 1
+        }
+      },
+      orderBy: {
+        deadline: 'asc'
+      }
+    });
+
+    if (tasks.length === 0) {
+      await bot.sendMessage(chatId, 
+        '📋 У вас пока нет заданий.\n\n' +
+        'Задания будут появляться здесь, когда администратор их назначит.',
+        getRegisteredMenu()
+      );
+      return;
+    }
+
+    let message = `📋 *Ваши задания*\n\n`;
+    message += `Всего заданий: ${tasks.length}\n\n`;
+
+    for (const task of tasks) {
+      const deadlineFormatted = formatDate(task.deadline);
+      const daysRemaining = calculateDaysRemaining(task.deadline);
+      
+      let statusIcon = '⏳';
+      let statusText = 'Ожидает выполнения';
+      if (task.submissions && task.submissions.length > 0) {
+        const submission = task.submissions[0];
+        if (submission.status === 'COMPLETED') {
+          statusIcon = '✅';
+          statusText = 'Выполнено';
+        } else if (submission.status === 'UNDER_REVIEW') {
+          statusIcon = '🔍';
+          statusText = 'На проверке';
+        } else if (submission.status === 'REJECTED') {
+          statusIcon = '❌';
+          statusText = 'Отклонено';
+        } else {
+          statusIcon = '📤';
+          statusText = 'Отправлено';
+        }
+      } else if (daysRemaining < 0) {
+        statusIcon = '⚠️';
+        statusText = 'Просрочено';
+      }
+
+      message += `${statusIcon} *${escapeMarkdown(task.title)}*\n`;
+      message += `📅 Дедлайн: ${escapeMarkdown(deadlineFormatted)}`;
+      if (daysRemaining >= 0) {
+        message += ` (осталось ${daysRemaining} дн.)`;
+      } else {
+        message += ` (просрочено на ${Math.abs(daysRemaining)} дн.)`;
+      }
+      message += `\n📊 Статус: ${statusText}\n\n`;
+    }
+
+    // Создаем клавиатуру: для каждого задания отдельная строка с кнопками
+    const keyboardRows = [];
+    
+    for (const task of tasks) {
+      const hasSubmission = task.submissions && task.submissions.length > 0;
+      const submission = hasSubmission ? task.submissions[0] : null;
+      
+      // Определяем, можно ли отправить решение
+      let canSubmit = true;
+      if (hasSubmission && submission) {
+        canSubmit = submission.status === 'REJECTED';
+      }
+      
+      // Первая строка: название задания (кликабельное)
+      const taskTitle = task.title.length > 35 ? task.title.substring(0, 35) + '...' : task.title;
+      keyboardRows.push([
+        { 
+          text: `📋 ${taskTitle}`, 
+          callback_data: `task_view_${task.id}` 
+        }
+      ]);
+      
+      // Вторая строка: кнопка отправки решения (ВСЕГДА показываем для заданий без решения)
+      if (canSubmit) {
+        // Можно отправить решение - большая заметная кнопка
+        keyboardRows.push([
+          { 
+            text: '📤 Отправить решение', 
+            callback_data: `task_submit_${task.id}` 
+          }
+        ]);
+      } else if (hasSubmission && submission) {
+        // Показываем статус решения
+        const statusText = {
+          'SUBMITTED': '📤 Решение отправлено',
+          'UNDER_REVIEW': '🔍 На проверке',
+          'COMPLETED': '✅ Решение принято',
+          'REJECTED': '❌ Решение отклонено'
+        };
+        const statusButtonText = statusText[submission.status] || '📊 Статус';
+        keyboardRows.push([
+          { 
+            text: statusButtonText, 
+            callback_data: `task_view_${task.id}` 
+          }
+        ]);
+        // Если отклонено, можно отправить заново
+        if (submission.status === 'REJECTED') {
+          keyboardRows.push([
+            { 
+              text: '🔄 Отправить заново', 
+              callback_data: `task_submit_${task.id}` 
+            }
+          ]);
+        }
+      } else {
+        // На всякий случай, если что-то пошло не так - все равно показываем кнопку
+        keyboardRows.push([
+          { 
+            text: '📤 Отправить решение', 
+            callback_data: `task_submit_${task.id}` 
+          }
+        ]);
+      }
+    }
+    
+    // Проверяем, что кнопки созданы
+    if (keyboardRows.length === 0) {
+      console.warn('⚠️ Не создано ни одной кнопки для заданий!');
+    } else {
+      console.log(`✅ Создано ${keyboardRows.length} строк кнопок для ${tasks.length} заданий`);
+    }
+    
+    const keyboard = {
+      reply_markup: {
+        inline_keyboard: keyboardRows
+      }
+    };
+
+    // Разбиваем сообщение на части, если оно слишком длинное
+    if (message.length > 4096) {
+      const parts = message.match(/[\s\S]{1,4000}/g) || [];
+      for (let i = 0; i < parts.length; i++) {
+        if (i === parts.length - 1) {
+          // В последней части добавляем кнопки
+          await bot.sendMessage(chatId, parts[i], { 
+            parse_mode: 'Markdown',
+            reply_markup: keyboard.reply_markup
+          });
+        } else {
+          await bot.sendMessage(chatId, parts[i], { 
+            parse_mode: 'Markdown'
+          });
+        }
+      }
+    } else {
+      // Отправляем сообщение с кнопками
+      await bot.sendMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard.reply_markup
+      });
+    }
+  } catch (error) {
+    console.error('Ошибка получения заданий:', error);
+    await bot.sendMessage(chatId, 
+      '❌ Произошла ошибка при получении заданий.\n\n' +
+      'Пожалуйста, попробуйте позже.',
+      getRegisteredMenu()
+    );
+  }
+}
+
+// Функция для просмотра деталей задания
+async function handleTaskView(chatId, taskId) {
+  try {
+    await bot.sendChatAction(chatId, 'typing');
+
+    const studentUser = await prisma.studentUser.findFirst({
+      where: { telegramId: chatId.toString() },
+      include: {
+        student: true
+      }
+    });
+
+    if (!studentUser || !studentUser.student) {
+      await bot.sendMessage(chatId, '❌ Студент не найден.', getRegisteredMenu());
+      return;
+    }
+
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        submissions: {
+          where: {
+            studentId: studentUser.student.id
+          },
+          orderBy: {
+            submittedAt: 'desc'
+          },
+          take: 1
+        }
+      }
+    });
+
+    if (!task) {
+      await bot.sendMessage(chatId, '❌ Задание не найдено.', getRegisteredMenu());
+      return;
+    }
+
+    if (task.studentId !== studentUser.student.id) {
+      await bot.sendMessage(chatId, '❌ Это задание не назначено вам.', getRegisteredMenu());
+      return;
+    }
+
+    const deadlineFormatted = formatDate(task.deadline);
+    const daysRemaining = calculateDaysRemaining(task.deadline);
+    
+    let message = `📋 *${escapeMarkdown(task.title)}*\n\n`;
+    message += `${escapeMarkdown(task.description)}\n\n`;
+    message += `📅 *Дедлайн:* ${escapeMarkdown(deadlineFormatted)}\n`;
+    
+    if (daysRemaining >= 0) {
+      message += `⏰ *Осталось:* ${daysRemaining} ${daysRemaining === 1 ? 'день' : daysRemaining < 5 ? 'дня' : 'дней'}\n`;
+    } else {
+      message += `⚠️ *Просрочено на:* ${Math.abs(daysRemaining)} ${Math.abs(daysRemaining) === 1 ? 'день' : Math.abs(daysRemaining) < 5 ? 'дня' : 'дней'}\n`;
+    }
+
+    if (task.referenceLink) {
+      message += `🔗 *Ссылка:* ${escapeMarkdown(task.referenceLink)}\n`;
+    }
+
+    if (task.submissions && task.submissions.length > 0) {
+      const submission = task.submissions[0];
+      message += `\n📊 *Статус решения:*\n`;
+      
+      const statusMessages = {
+        'SUBMITTED': '📤 Отправлено',
+        'UNDER_REVIEW': '🔍 На проверке',
+        'COMPLETED': '✅ Принято',
+        'REJECTED': '❌ Отклонено'
+      };
+      
+      message += `${statusMessages[submission.status] || submission.status}\n`;
+      
+      if (submission.solutionLink) {
+        message += `🔗 *Ваше решение:* ${escapeMarkdown(submission.solutionLink)}\n`;
+      }
+      
+      if (submission.solutionDescription) {
+        message += `📝 *Описание:* ${escapeMarkdown(submission.solutionDescription.substring(0, 200))}${submission.solutionDescription.length > 200 ? '...' : ''}\n`;
+      }
+      
+      if (submission.grade) {
+        message += `⭐ *Оценка:* ${submission.grade}/10\n`;
+      }
+      
+      if (submission.reviewComment) {
+        message += `💬 *Комментарий:* ${escapeMarkdown(submission.reviewComment)}\n`;
+      }
+
+      const keyboard = {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🔄 Отправить заново', callback_data: `task_submit_${taskId}` }],
+            [{ text: '◀️ Назад к списку', callback_data: 'tasks_list' }]
+          ]
+        }
+      };
+
+      await bot.sendMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard.reply_markup
+      });
+    } else {
+      message += `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+      message += `💡 *Чтобы отправить решение, нажмите кнопку ниже*`;
+      
+      const keyboard = {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '📤 Отправить решение', callback_data: `task_submit_${taskId}` }],
+            [{ text: '◀️ Назад к списку', callback_data: 'tasks_list' }]
+          ]
+        }
+      };
+
+      await bot.sendMessage(chatId, message, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard.reply_markup
+      });
+    }
+  } catch (error) {
+    console.error('Ошибка просмотра задания:', error);
+    await bot.sendMessage(chatId, 
+      '❌ Произошла ошибка.\n\n' +
+      'Пожалуйста, попробуйте позже.',
+      getRegisteredMenu()
+    );
+  }
+}
+
+// Начало отправки решения задания
+async function handleTaskSubmitStart(chatId, taskId) {
+  try {
+    console.log(`📤 handleTaskSubmitStart вызван: chatId=${chatId}, taskId=${taskId}`);
+    // Получаем информацию о задании для отображения
+    const task = await prisma.task.findUnique({
+      where: { id: taskId }
+    });
+
+    if (!task) {
+      await bot.sendMessage(chatId, '❌ Задание не найдено.', getRegisteredMenu());
+      return;
+    }
+
+    const state = userStates.get(chatId) || initUserState(chatId);
+    state.state = TaskSubmissionState.WAITING_SOLUTION;
+    state.data = { taskId };
+
+    const deadlineFormatted = formatDate(task.deadline);
+    
+    await bot.sendMessage(chatId,
+      `📤 *Отправка решения задания*\n\n` +
+      `*${escapeMarkdown(task.title)}*\n\n` +
+      `📅 Дедлайн: ${escapeMarkdown(deadlineFormatted)}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `*Что нужно отправить?*\n\n` +
+      `Вы можете отправить:\n` +
+      `• 🔗 Ссылку на репозиторий (GitHub, GitLab и т.д.)\n` +
+      `• 📎 Ссылку на файл или документ (Google Drive, Dropbox и т.д.)\n` +
+      `• 📝 Текстовое описание решения\n\n` +
+      `*Примеры:*\n` +
+      `• https://github.com/username/repo\n` +
+      `• https://drive.google.com/file/...\n` +
+      `• Описание: Реализовал калькулятор с функциями...\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `Просто отправьте ссылку или текст в следующем сообщении\\.\n` +
+      `Используйте /cancel для отмены\\.`,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (error) {
+    console.error('Ошибка начала отправки решения:', error);
+    await bot.sendMessage(chatId, '❌ Произошла ошибка.', getRegisteredMenu());
+  }
+}
+
+// Обработка отправки решения задания
+async function handleTaskSubmitSolution(chatId, text, submitData) {
+  try {
+    const { taskId } = submitData;
+
+    // Проверяем, является ли текст URL
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const urls = text.match(urlRegex);
+    const solutionLink = urls && urls.length > 0 ? urls[0] : null;
+    const solutionDescription = solutionLink ? text.replace(urlRegex, '').trim() || null : text.trim();
+
+    if (!solutionLink && !solutionDescription) {
+      await bot.sendMessage(chatId,
+        '❌ Пожалуйста, отправьте ссылку на решение или описание.\n\n' +
+        'Используйте /cancel для отмены.',
+        getRegisteredMenu()
+      );
+      return;
+    }
+
+    const studentUser = await prisma.studentUser.findFirst({
+      where: { telegramId: chatId.toString() },
+      include: {
+        student: true
+      }
+    });
+
+    if (!studentUser || !studentUser.student) {
+      await bot.sendMessage(chatId, '❌ Студент не найден.', getRegisteredMenu());
+      return;
+    }
+
+    const task = await prisma.task.findUnique({
+      where: { id: taskId }
+    });
+
+    if (!task || task.studentId !== studentUser.student.id) {
+      await bot.sendMessage(chatId, '❌ Задание не найдено или не назначено вам.', getRegisteredMenu());
+      return;
+    }
+
+    // Проверяем существующее решение
+    const existingSubmission = await prisma.taskSubmission.findUnique({
+      where: {
+        taskId_studentId: {
+          taskId,
+          studentId: studentUser.student.id
+        }
+      }
+    });
+
+    let submission;
+    if (existingSubmission) {
+      submission = await prisma.taskSubmission.update({
+        where: { id: existingSubmission.id },
+        data: {
+          solutionLink,
+          solutionDescription,
+          status: 'SUBMITTED',
+          submittedAt: new Date()
+        }
+      });
+    } else {
+      submission = await prisma.taskSubmission.create({
+        data: {
+          taskId,
+          studentId: studentUser.student.id,
+          solutionLink,
+          solutionDescription,
+          status: 'SUBMITTED'
+        }
+      });
+    }
+
+    await prisma.task.update({
+      where: { id: taskId },
+      data: {
+        status: 'SUBMITTED'
+      }
+    });
+
+    // Очищаем состояние
+    const state = userStates.get(chatId);
+    if (state) {
+      state.state = TaskSubmissionState.IDLE;
+      state.data = {};
+    }
+
+    await bot.sendMessage(chatId,
+      `✅ *Решение отправлено\\!*\n\n` +
+      `Ваше решение отправлено на проверку администратору\\.\n\n` +
+      (solutionLink ? `🔗 *Ссылка:* ${escapeMarkdown(solutionLink)}\n` : '') +
+      (solutionDescription ? `📝 *Описание:* ${escapeMarkdown(solutionDescription.substring(0, 100))}${solutionDescription.length > 100 ? '...' : ''}\n` : '') +
+      `\nВы получите уведомление, когда администратор проверит решение\\.`,
+      { parse_mode: 'Markdown', ...getRegisteredMenu() }
+    );
+
+    // Уведомляем админов
+    const ADMIN_CHAT_IDS = (process.env.ADMIN_CHAT_IDS || process.env.ADMIN_CHAT_ID || '')
+      .split(',')
+      .map(id => id.trim())
+      .filter(Boolean);
+
+    if (ADMIN_CHAT_IDS.length > 0) {
+      const studentName = `${studentUser.student.lastName} ${studentUser.student.firstName}${studentUser.student.middleName ? ' ' + studentUser.student.middleName : ''}`;
+      const message = `📥 *Новое решение задания*\n\n` +
+        `👤 *Студент:* ${escapeMarkdown(studentName)}\n` +
+        `📋 *Задание:* ${escapeMarkdown(task.title)}\n` +
+        `📅 *Отправлено:* ${new Date(submission.submittedAt).toLocaleString('ru-RU')}\n\n` +
+        (solutionLink ? `🔗 *Ссылка:* ${escapeMarkdown(solutionLink)}\n` : '') +
+        (solutionDescription ? `📝 *Описание:* ${escapeMarkdown(solutionDescription.substring(0, 200))}${solutionDescription.length > 200 ? '...' : ''}\n` : '') +
+        `\nПроверьте решение на панели администратора\\.`;
+
+      for (const adminChatId of ADMIN_CHAT_IDS) {
+        try {
+          await sendNotification(adminChatId, message);
+        } catch (error) {
+          console.error('Ошибка отправки уведомления админу:', error);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Ошибка отправки решения:', error);
+    await bot.sendMessage(chatId,
+      '❌ Произошла ошибка при отправке решения\\.\n\n' +
+      'Пожалуйста, попробуйте позже\\.',
+      getRegisteredMenu()
+    );
+  }
 }
 
 function startDailyNotifications() {
@@ -1857,35 +3330,35 @@ export async function notifyApplicationStatusChange(applicationId, newStatus, re
     };
 
     if (newStatus === 'APPROVED') {
-      message = `✅ *Ваша заявка одобрена!*\n\n` +
-               `Администратор рассмотрел вашу заявку на практику и одобрил её.\n\n` +
+      message = `✅ *Ваша заявка одобрена\\!*\n\n` +
+               `Администратор рассмотрел вашу заявку на практику и одобрил её\\.\n\n` +
                `📋 *Детали заявки:*\n` +
-               `👤 *Студент:* ${application.lastName} ${application.firstName}${application.middleName ? ' ' + application.middleName : ''}\n` +
-               `📚 *Тип практики:* ${practiceTypeNames[application.practiceType] || application.practiceType}\n` +
-               `🏫 *Учебное заведение:* ${application.institutionName}\n` +
+               `👤 *Студент:* ${escapeMarkdown(application.lastName || '')} ${escapeMarkdown(application.firstName || '')}${application.middleName ? ' ' + escapeMarkdown(application.middleName) : ''}\n` +
+               `📚 *Тип практики:* ${escapeMarkdown(practiceTypeNames[application.practiceType] || application.practiceType || 'Не указан')}\n` +
+               `🏫 *Учебное заведение:* ${escapeMarkdown(application.institutionName || 'Не указано')}\n` +
                `📅 *Период практики:*\n` +
-               `   Начало: ${formatDate(application.startDate)}\n` +
-               `   Окончание: ${formatDate(application.endDate)}\n\n` +
-               `💡 *Что дальше?*\n` +
+               `   Начало: ${escapeMarkdown(formatDate(application.startDate))}\n` +
+               `   Окончание: ${escapeMarkdown(formatDate(application.endDate))}\n\n` +
+               `💡 *Что дальше\\?*\n` +
                `• Используйте кнопку "📅 Моя практика" или команду /my_practice для просмотра подробной информации\n` +
                `• Вы будете получать ежедневные напоминания о количестве оставшихся дней до окончания практики\n\n` +
-               `Поздравляем! 🎉`;
+               `Поздравляем\\! 🎉`;
     } else if (newStatus === 'REJECTED') {
       message = `❌ *Ваша заявка отклонена*\n\n` +
                `К сожалению, администратор отклонил вашу заявку на практику.\n\n`;
       
       if (rejectionReason) {
-        message += `📝 *Причина отклонения:*\n${rejectionReason}\n\n`;
+        message += `📝 *Причина отклонения:*\n${escapeMarkdown(rejectionReason)}\n\n`;
       } else {
         message += `*Причина:* Не указана\n\n`;
       }
       
       message += `📋 *Детали заявки:*\n` +
-               `👤 *Студент:* ${application.lastName} ${application.firstName}${application.middleName ? ' ' + application.middleName : ''}\n` +
-               `📚 *Тип практики:* ${practiceTypeNames[application.practiceType] || application.practiceType}\n` +
-               `🏫 *Учебное заведение:* ${application.institutionName}\n` +
-               `📅 *Период:* ${formatDate(application.startDate)} - ${formatDate(application.endDate)}\n\n` +
-               `💡 *Что дальше?*\n` +
+               `👤 *Студент:* ${escapeMarkdown(application.lastName || '')} ${escapeMarkdown(application.firstName || '')}${application.middleName ? ' ' + escapeMarkdown(application.middleName) : ''}\n` +
+               `📚 *Тип практики:* ${escapeMarkdown(practiceTypeNames[application.practiceType] || application.practiceType || 'Не указан')}\n` +
+               `🏫 *Учебное заведение:* ${escapeMarkdown(application.institutionName || 'Не указано')}\n` +
+               `📅 *Период:* ${escapeMarkdown(formatDate(application.startDate))} \\- ${escapeMarkdown(formatDate(application.endDate))}\n\n` +
+               `💡 *Что дальше\\?*\n` +
                `• Если у вас есть вопросы, обратитесь к администратору системы\n` +
                `• Вы можете подать новую заявку, исправив указанные проблемы\n` +
                `• Используйте команду /register для подачи новой заявки`;
@@ -1936,4 +3409,22 @@ export async function sendBulkNotifications(telegramIds, message) {
     results.push({ telegramId, success });
   }
   return results;
+}
+
+// Инициализация бота при загрузке модуля
+if (token) {
+  initializeBot().then((success) => {
+    if (success) {
+      console.log('✅ Telegram-бот полностью инициализирован и готов к работе');
+    } else {
+      console.warn('⚠️ Telegram-бот не инициализирован, но сервер продолжит работу');
+      console.warn('💡 Функции уведомлений через Telegram будут недоступны');
+      console.warn('💡 Проверьте интернет-соединение и доступность Telegram API');
+    }
+  }).catch((error) => {
+    console.error('❌ Критическая ошибка инициализации бота:', error.message);
+    console.warn('⚠️ Сервер продолжит работу без Telegram-бота');
+  });
+} else {
+  console.log('⚠️ TELEGRAM_BOT_TOKEN не установлен, бот не будет работать');
 }

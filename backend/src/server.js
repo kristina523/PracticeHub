@@ -12,6 +12,7 @@ import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
 import applicationRoutes from './routes/applications.js';
 import notificationRoutes from './routes/notifications.js';
+import taskRoutes from './routes/tasks.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,6 +78,7 @@ app.use('/api/institutions', institutionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/tasks', taskRoutes);
 
 
 app.use(express.static(path.join(__dirname, '../public')));
@@ -99,10 +101,12 @@ app.listen(PORT, async () => {
   // Запускаем Telegram-бота (только если токен установлен)
   if (process.env.TELEGRAM_BOT_TOKEN) {
     try {
-      await import('./bot/telegramBot.js');
-      console.log('✅ Telegram-бот успешно запущен');
+      const botModule = await import('./bot/telegramBot.js');
+      // Бот инициализируется автоматически при импорте модуля
+      console.log('✅ Telegram-бот модуль загружен');
     } catch (error) {
       console.error('❌ Ошибка запуска Telegram-бота:', error.message);
+      console.error('Детали:', error);
     }
   } else {
     console.log('⚠️ Telegram-бот не запущен (TELEGRAM_BOT_TOKEN не установлен)');
