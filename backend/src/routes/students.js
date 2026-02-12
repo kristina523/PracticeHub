@@ -15,6 +15,7 @@ router.get('/', authenticateToken, async (req, res) => {
       startDate,
       endDate,
       isRegistered,
+      userOnly,
       page = 1,
       limit = 50
     } = req.query;
@@ -78,36 +79,42 @@ router.get('/', authenticateToken, async (req, res) => {
       prisma.student.count({ where })
     ]);
 
+    // Получаем информацию о зарегистрированных студентах (StudentUser)
     const allRegisteredStudents = await prisma.studentUser.findMany({
       select: {
         id: true,
-        studentId: true,
         username: true,
         email: true,
         createdAt: true
       }
     });
 
-    const studentIds = students.map(s => s.id);
-    
-    const registeredWithStudent = allRegisteredStudents.filter(reg => reg.studentId && studentIds.includes(reg.studentId));
-    const registeredWithoutStudent = allRegisteredStudents.filter(reg => !reg.studentId || !studentIds.includes(reg.studentId));
+    // Получаем ID всех StudentUser, которые уже связаны со Student через userId
+    const studentsWithUser = students.filter(s => s.userId).map(s => s.userId);
+    const studentUserIdsSet = new Set(studentsWithUser);
 
+    // Разделяем зарегистрированных на тех, у кого есть Student запись, и тех, у кого нет
+    const registeredWithStudent = allRegisteredStudents.filter(reg => studentUserIdsSet.has(reg.id));
+    const registeredWithoutStudent = allRegisteredStudents.filter(reg => !studentUserIdsSet.has(reg.id));
+
+    // Создаем Map для быстрого доступа к данным StudentUser по ID
     const registeredMap = new Map();
-    registeredWithStudent.forEach(reg => {
-      if (reg.studentId) {
-        registeredMap.set(reg.studentId, {
-          username: reg.username,
-          email: reg.email
-        });
-      }
+    allRegisteredStudents.forEach(reg => {
+      registeredMap.set(reg.id, {
+        username: reg.username,
+        email: reg.email
+      });
     });
 
-    let studentsWithRegistration = students.map(student => ({
-      ...student,
-      isRegistered: registeredMap.has(student.id),
-      studentUser: registeredMap.get(student.id) || null
-    }));
+    // Добавляем информацию о регистрации к студентам
+    let studentsWithRegistration = students.map(student => {
+      const userInfo = student.userId ? registeredMap.get(student.userId) : null;
+      return {
+        ...student,
+        isRegistered: !!student.userId && !!userInfo,
+        studentUser: userInfo || null
+      };
+    });
 
     const virtualStudents = registeredWithoutStudent.map(reg => ({
       id: `user_${reg.id}`, 
@@ -138,6 +145,17 @@ router.get('/', authenticateToken, async (req, res) => {
     }));
 
     studentsWithRegistration = [...studentsWithRegistration, ...virtualStudents];
+
+    // Если запрашиваются данные только текущего пользователя
+    if (userOnly === 'true' || userOnly === true) {
+      const currentUser = req.user;
+      if (currentUser && currentUser.role === 'student') {
+        // Фильтруем только студента текущего пользователя
+        studentsWithRegistration = studentsWithRegistration.filter(
+          student => student.userId === currentUser.id || (student.isVirtual && student.studentUser?.email === currentUser.email)
+        );
+      }
+    }
 
     let filteredTotal = total + virtualStudents.length; 
     if (isRegistered !== undefined && isRegistered !== '' && isRegistered !== null) {
@@ -409,40 +427,154 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Обработка виртуальных студентов (только StudentUser без Student)
     if (id.startsWith('user_')) {
       const studentUserId = id.replace('user_', '');
 
       const studentUser = await prisma.studentUser.findUnique({
-        where: { id: studentUserId }
+        where: { id: studentUserId },
+        include: {
+          applications: true,
+          assignedTasks: true,
+          reviewedSubmissions: true,
+          courseEnrollments: {
+            include: {
+              messages: true
+            }
+          },
+          student: true // Проверяем, есть ли связанный Student
+        }
       });
 
       if (!studentUser) {
         return res.status(404).json({ message: 'Аккаунт студента не найден' });
       }
 
+      // Если есть связанный Student, не удаляем - это не виртуальный студент
+      if (studentUser.student) {
+        return res.status(400).json({ 
+          message: 'Этот студент имеет связанную запись. Удалите запись Student сначала.' 
+        });
+      }
+
+      // Удаляем связанные данные в правильном порядке
+      // 1. Удаляем сообщения в чатах курсов
+      for (const enrollment of studentUser.courseEnrollments) {
+        if (enrollment.messages && enrollment.messages.length > 0) {
+          await prisma.courseChatMessage.deleteMany({
+            where: { enrollmentId: enrollment.id }
+          });
+        }
+      }
+
+      // 2. Удаляем записи на курсы
+      if (studentUser.courseEnrollments.length > 0) {
+        await prisma.courseEnrollment.deleteMany({
+          where: { studentUserId: studentUserId }
+        });
+      }
+
+      // 3. Удаляем заявки
+      if (studentUser.applications.length > 0) {
+        await prisma.practiceApplication.deleteMany({
+          where: { studentUserId: studentUserId }
+        });
+      }
+
+      // 4. Обрабатываем задачи, где этот пользователь был назначен
+      if (studentUser.assignedTasks.length > 0) {
+        // Удаляем задачи, которые были созданы этим пользователем
+        // Сначала удаляем все решения этих задач
+        const taskIds = studentUser.assignedTasks.map(t => t.id);
+        if (taskIds.length > 0) {
+          await prisma.taskSubmission.deleteMany({
+            where: { taskId: { in: taskIds } }
+          });
+          // Затем удаляем сами задачи
+          await prisma.task.deleteMany({
+            where: { id: { in: taskIds } }
+          });
+        }
+      }
+
+      // 5. Обновляем проверенные решения (устанавливаем reviewedById в null)
+      if (studentUser.reviewedSubmissions.length > 0) {
+        await prisma.taskSubmission.updateMany({
+          where: { reviewedById: studentUserId },
+          data: { reviewedById: null }
+        });
+      }
+
+      // 6. Удаляем StudentUser
       await prisma.studentUser.delete({ where: { id: studentUserId } });
 
       return res.json({ message: 'Аккаунт студента удален, повторная регистрация доступна' });
     }
 
+    // Обработка обычных студентов (Student)
     const student = await prisma.student.findUnique({
-      where: { id }
+      where: { id },
+      include: {
+        applications: true,
+        tasks: true,
+        submissions: true,
+        user: {
+          include: {
+            courseEnrollments: true
+          }
+        }
+      }
     });
 
     if (!student) {
       return res.status(404).json({ message: 'Студент не найден' });
     }
 
-    const linkedStudentUser = await prisma.studentUser.findUnique({
-      where: { studentId: id }
-    });
-
-    if (linkedStudentUser) {
-      await prisma.studentUser.delete({
-        where: { id: linkedStudentUser.id }
+    // Удаляем связанные данные
+    if (student.submissions.length > 0) {
+      await prisma.taskSubmission.deleteMany({
+        where: { studentId: id }
       });
     }
 
+    // Удаляем задачи, назначенные конкретно этому студенту (не курсовые)
+    if (student.tasks.length > 0) {
+      await prisma.task.deleteMany({
+        where: { studentId: id }
+      });
+    }
+
+    if (student.applications.length > 0) {
+      await prisma.practiceApplication.deleteMany({
+        where: { studentId: id }
+      });
+    }
+
+    // Если у студента есть связанный StudentUser, удаляем его и связанные данные
+    if (student.userId && student.user) {
+      const studentUser = student.user;
+
+      // Удаляем заявки StudentUser
+      if (studentUser.applications && studentUser.applications.length > 0) {
+        await prisma.practiceApplication.deleteMany({
+          where: { studentUserId: student.userId }
+        });
+      }
+
+      // Удаляем записи на курсы
+      if (studentUser.courseEnrollments && studentUser.courseEnrollments.length > 0) {
+        await prisma.courseEnrollment.deleteMany({
+          where: { studentUserId: student.userId }
+        });
+      }
+
+      // Удаляем StudentUser
+      await prisma.studentUser.delete({
+        where: { id: student.userId }
+      });
+    }
+
+    // Удаляем самого студента
     await prisma.student.delete({
       where: { id }
     });
@@ -450,7 +582,16 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     res.json({ message: 'Студент и связанные учетные данные удалены' });
   } catch (error) {
     console.error('Ошибка удаления студента:', error);
-    res.status(500).json({ message: 'Внутренняя ошибка сервера' });
+    console.error('Детали ошибки:', {
+      message: error.message,
+      code: error.code,
+      meta: error.meta,
+      stack: error.stack?.substring(0, 500)
+    });
+    res.status(500).json({ 
+      message: 'Внутренняя ошибка сервера',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

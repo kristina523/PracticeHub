@@ -308,32 +308,49 @@ router.post('/register/student',
         }
 
         // Проверяем, что для этого студента еще нет аккаунта
-        const existingStudentUser = await prisma.studentUser.findUnique({
-          where: { studentId }
+        const existingStudent = await prisma.student.findUnique({
+          where: { id: studentId },
+          select: { userId: true }
         });
+        
+        if (existingStudent && existingStudent.userId) {
+          return res.status(400).json({ message: 'Для этого студента уже создан аккаунт' });
+        }
 
         if (existingStudentUser) {
           return res.status(400).json({ message: 'Для этого студента уже создан аккаунт' });
         }
       }
       
+      // Хэшируем пароль
       const hashedPassword = await bcrypt.hash(password, 10);
       
+      // Генерируем telegramId, если он не предоставлен (используем уникальный ID на основе email/username)
+      const telegramId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      
+      // Создаем StudentUser
       const studentUser = await prisma.studentUser.create({
         data: {
           username: username.trim(),
           email: email.trim(),
           password: hashedPassword,
-          studentId: studentId 
+          telegramId: telegramId
         },
         select: {
           id: true,
           username: true,
           email: true,
-          studentId: true,
           createdAt: true
         }
       });
+      
+      // Если указан studentId, связываем StudentUser со Student
+      if (studentId) {
+        await prisma.student.update({
+          where: { id: studentId },
+          data: { userId: studentUser.id }
+        });
+      }
 
       res.status(201).json({ message: 'Студент успешно зарегистрирован', student: studentUser });
     } catch (error) {
@@ -400,15 +417,42 @@ router.post('/login',
           };
         }
       } else if (role === 'student') {
-        user = await prisma.studentUser.findUnique({ where: { username } });
+        // Ищем студента по username или email, так как оба поля опциональные
+        console.log('Поиск студента:', { username, role });
+        
+        // Строим условие поиска, исключая null значения
+        const whereConditions = [];
+        if (username) {
+          whereConditions.push({ username: username });
+          whereConditions.push({ email: username });
+        }
+        
+        if (whereConditions.length === 0) {
+          console.error('Username не указан для поиска студента');
+          return res.status(400).json({ message: 'Имя пользователя обязательно' });
+        }
+        
+        user = await prisma.studentUser.findFirst({
+          where: {
+            OR: whereConditions
+          },
+          include: {
+            student: {
+              select: {
+                id: true
+              }
+            }
+          }
+        });
+        console.log('Найден студент:', user ? { id: user.id, username: user.username, email: user.email, hasPassword: !!user.password } : null);
         if (user) {
           userRole = 'student';
           userData = {
             id: user.id,
             username: user.username,
             email: user.email,
-            studentId: user.studentId,
-            role: 'student'
+            role: 'student',
+            studentId: user.student?.id || null
           };
         }
       } else {
@@ -437,15 +481,30 @@ router.post('/login',
               role: 'teacher'
             };
           } else {
-            user = await prisma.studentUser.findUnique({ where: { username } });
+            // Ищем студента по username или email
+            user = await prisma.studentUser.findFirst({
+              where: {
+                OR: [
+                  { username: username },
+                  { email: username } // Позволяем вводить email вместо username
+                ]
+              },
+              include: {
+                student: {
+                  select: {
+                    id: true
+                  }
+                }
+              }
+            });
             if (user) {
               userRole = 'student';
               userData = {
                 id: user.id,
                 username: user.username,
                 email: user.email,
-                studentId: user.studentId,
-                role: 'student'
+                role: 'student',
+                studentId: user.student?.id || null
               };
             }
           }
@@ -453,17 +512,29 @@ router.post('/login',
       }
 
       if (!user) {
+        console.error('Пользователь не найден:', { username, role });
         return res.status(401).json({ message: 'Неверные учетные данные' });
+      }
+      
+      // Проверяем, что у пользователя есть пароль
+      if (!user.password) {
+        console.error('У пользователя отсутствует пароль:', { userId: user.id, username: user.username, email: user.email });
+        return res.status(401).json({ message: 'Ошибка аутентификации: пароль не установлен' });
       }
       
       const isValidPassword = await bcrypt.compare(password, user.password);
 
       if (!isValidPassword) {
+        console.error('Неверный пароль для пользователя:', { userId: user.id, username: user.username, email: user.email });
         return res.status(401).json({ message: 'Неверные учетные данные' });
       }
       
       const token = jwt.sign(
-        { id: user.id, username: user.username, role: userRole },
+        { 
+          id: user.id, 
+          username: user.username || user.email || user.id, // Используем email или id, если username отсутствует
+          role: userRole 
+        },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
@@ -474,7 +545,15 @@ router.post('/login',
       });
     } catch (error) {
       console.error('Ошибка входа в систему:', error);
-      res.status(500).json({ message: 'Внутренняя ошибка сервера' });
+      console.error('Детали ошибки:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+      res.status(500).json({ 
+        message: 'Внутренняя ошибка сервера',
+        ...(process.env.NODE_ENV === 'development' && { error: error.message })
+      });
     }
   }
 );
@@ -526,16 +605,23 @@ router.get('/me', async (req, res) => {
     } else if (role === 'student') {
       user = await prisma.studentUser.findUnique({
         where: { id: decoded.id },
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          studentId: true,
-          createdAt: true
+        include: {
+          student: {
+            select: {
+              id: true
+            }
+          }
         }
       });
       if (user) {
-        userData = { ...user, role: 'student' };
+        userData = { 
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: 'student',
+          studentId: user.student?.id || null,
+          createdAt: user.createdAt
+        };
       }
     } else {
       // Обратная совместимость - ищем как админа

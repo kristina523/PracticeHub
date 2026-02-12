@@ -31,6 +31,7 @@ function StudentForm() {
   const isEdit = !!id;
   
   const [institutions, setInstitutions] = useState([]);
+  const [allInstitutions, setAllInstitutions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [institutionSearch, setInstitutionSearch] = useState('');
@@ -65,6 +66,9 @@ function StudentForm() {
       const params = search ? { search, limit: 10 } : {};
       const response = await api.get('/institutions', { params });
       setInstitutions(response.data);
+      if (!search) {
+        setAllInstitutions(response.data);
+      }
       return response.data;
     } catch (error) {
       console.error('Ошибка получения учебных заведений:', error);
@@ -284,7 +288,7 @@ function StudentForm() {
             {errors.institutionName && (
               <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.institutionName.message}</p>
             )}
-            {institutionSearch && !showSuggestions && institutionSuggestions.length === 0 && institutionSearch.length >= 1 && (
+            {institutionSearch && !showSuggestions && institutionSuggestions.length === 0 && institutionSearch.length >= 1 && !selectedInstitutionId && !allInstitutions.some(inst => inst.name.toLowerCase() === institutionSearch.toLowerCase()) && (
               <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                 <p className="text-sm text-blue-800 dark:text-blue-300">
                   <strong>Учебное заведение не найдено.</strong> При сохранении будет создано новое учебное заведение с указанным названием.

@@ -1,74 +1,59 @@
 import { useAuthStore } from '../store/authStore';
-import { Moon, Sun, LogOut } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { LogOut, Plus, Grid3x3, User } from 'lucide-react';
 
 function Header() {
   const { user, logout } = useAuthStore();
-  const admin = user?.role === 'admin' ? user : null;
-  const [darkMode, setDarkMode] = useState(
-    localStorage.getItem('darkMode') === 'true' || 
-    (!localStorage.getItem('darkMode') && window.matchMedia('(prefers-color-scheme: dark)').matches)
-  );
 
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+  const getUserDisplayName = () => {
+    if (user?.role === 'teacher') {
+      return `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username;
     }
-    localStorage.setItem('darkMode', darkMode);
-  }, [darkMode]);
+    return user?.username || 'Пользователь';
+  };
 
-  const toggleDarkMode = () => {
-    setDarkMode(!darkMode);
+  const getRoleLabel = () => {
+    if (user?.role === 'admin') return 'Админ';
+    if (user?.role === 'teacher') return 'Преподаватель';
+    return 'Студент';
   };
 
   return (
-    <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
-      <div className="px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center">
-            <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-              PracticeHub
-            </h1>
+    <header className="bg-white border-b border-gray-200 h-16 flex items-center px-4 shadow-sm">
+      <div className="flex items-center gap-4 flex-1">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+            <span className="text-white font-bold text-sm">P</span>
           </div>
-          
-          <div className="flex items-center gap-4">
-            <button
-              onClick={toggleDarkMode}
-              className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-              aria-label="Toggle dark mode"
-            >
-              {darkMode ? (
-                <Sun className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              ) : (
-                <Moon className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-              )}
-            </button>
-            
-            {user && (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600 dark:text-gray-300">
-                  {user.role === 'teacher' 
-                    ? `${user.firstName} ${user.lastName}` 
-                    : user.role === 'student'
-                    ? user.username
-                    : user.username}
-                </span>
-                <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded text-gray-600 dark:text-gray-300">
-                  {user.role === 'admin' ? 'Админ' : user.role === 'teacher' ? 'Преподаватель' : 'Студент'}
-                </span>
-                <button
-                  onClick={logout}
-                  className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                  aria-label="Logout"
-                >
-                  <LogOut className="w-5 h-5 text-gray-600 dark:text-gray-300" />
-                </button>
-              </div>
-            )}
-          </div>
+          <span className="text-xl font-medium text-gray-900">Класс</span>
         </div>
+      </div>
+      
+      <div className="flex items-center gap-2">
+        <button className="p-2 rounded-full hover:bg-gray-100 transition-colors">
+          <Plus className="w-5 h-5 text-gray-600" />
+        </button>
+        <button className="p-2 rounded-full hover:bg-gray-100 transition-colors">
+          <Grid3x3 className="w-5 h-5 text-gray-600" />
+        </button>
+        {user && (
+          <>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer">
+              <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
+                <User className="w-5 h-5 text-white" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-medium text-gray-900">{getUserDisplayName()}</p>
+                <p className="text-xs text-gray-500">{getRoleLabel()}</p>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              Выход
+            </button>
+          </>
+        )}
       </div>
     </header>
   );

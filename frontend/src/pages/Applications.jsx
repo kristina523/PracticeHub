@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import api from '../utils/api';
-import { FileText, CheckCircle, XCircle, Clock, Loader2, Eye } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Clock, Loader2, Eye, BookOpen, User, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { useAuthStore } from '../store/authStore';
 
 const practiceTypeLabels = {
   EDUCATIONAL: 'Учебная',
@@ -23,8 +24,11 @@ const statusColors = {
 };
 
 function Applications() {
+  const { user } = useAuthStore();
   const [applications, setApplications] = useState([]);
+  const [courseEnrollments, setCourseEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('practice'); 
   const [filters, setFilters] = useState({
     status: '',
     practiceType: ''
@@ -36,12 +40,16 @@ function Applications() {
     pages: 0
   });
   const [selectedApplication, setSelectedApplication] = useState(null);
+  const [selectedEnrollment, setSelectedEnrollment] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [approvalNotes, setApprovalNotes] = useState('');
 
   useEffect(() => {
     fetchApplications();
-  }, [filters, pagination.page]);
+    if (user?.role === 'teacher') {
+      fetchCourseEnrollments();
+    }
+  }, [filters, pagination.page, user]);
 
   const fetchApplications = async () => {
     setLoading(true);
@@ -54,12 +62,22 @@ function Applications() {
       };
 
       const response = await api.get('/applications', { params });
-      setApplications(response.data.applications);
-      setPagination(response.data.pagination);
+      setApplications(response.data.applications || []);
+      setPagination(response.data.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
     } catch (error) {
       console.error('Ошибка получения заявок:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCourseEnrollments = async () => {
+    try {
+      const response = await api.get('/course-enrollments/teacher/pending');
+      setCourseEnrollments(response.data || []);
+    } catch (error) {
+      console.error('Ошибка получения заявок на курсы:', error);
+      setCourseEnrollments([]);
     }
   };
 
@@ -76,6 +94,22 @@ function Applications() {
       alert('Заявка одобрена! Студент создан.');
     } catch (error) {
       alert('Ошибка при одобрении: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Вы уверены, что хотите удалить эту заявку? Это действие нельзя отменить.')) {
+      return;
+    }
+
+    try {
+      const response = await api.delete(`/applications/${id}`);
+      fetchApplications();
+      alert('Заявка успешно удалена');
+    } catch (error) {
+      console.error('Ошибка при удалении заявки:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Неизвестная ошибка';
+      alert('Ошибка при удалении: ' + errorMessage);
     }
   };
 
@@ -100,6 +134,36 @@ function Applications() {
     }
   };
 
+  const handleApproveEnrollment = async (enrollmentId) => {
+    if (!window.confirm('Вы уверены, что хотите одобрить эту заявку на курс?')) {
+      return;
+    }
+
+    try {
+      await api.patch(`/course-enrollments/${enrollmentId}`, { status: 'APPROVED' });
+      setSelectedEnrollment(null);
+      fetchCourseEnrollments();
+      alert('Заявка на курс одобрена!');
+    } catch (error) {
+      alert('Ошибка при одобрении: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleRejectEnrollment = async (enrollmentId) => {
+    if (!window.confirm('Вы уверены, что хотите отклонить эту заявку на курс?')) {
+      return;
+    }
+
+    try {
+      await api.patch(`/course-enrollments/${enrollmentId}`, { status: 'REJECTED' });
+      setSelectedEnrollment(null);
+      fetchCourseEnrollments();
+      alert('Заявка на курс отклонена.');
+    } catch (error) {
+      alert('Ошибка при отклонении: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setPagination(prev => ({ ...prev, page: 1 }));
@@ -114,56 +178,97 @@ function Applications() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Заявки на практику
+        <h1 className="text-3xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
+          Заявки
         </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Управление заявками студентов на практику
+        <p className="text-gray-600 dark:text-gray-400">
+          Управление заявками студентов
         </p>
       </div>
 
-      <div className="card">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          <select
-            value={filters.status}
-            onChange={(e) => handleFilterChange('status', e.target.value)}
-            className="input"
+      {}
+      {user?.role === 'teacher' && (
+        <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
+          <button
+            onClick={() => setActiveTab('practice')}
+            className={`px-6 py-3 font-semibold transition-all duration-200 border-b-2 ${
+              activeTab === 'practice'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
           >
-            <option value="">Все статусы</option>
-            <option value="PENDING">На рассмотрении</option>
-            <option value="APPROVED">Одобренные</option>
-            <option value="REJECTED">Отклоненные</option>
-          </select>
-
-          <select
-            value={filters.practiceType}
-            onChange={(e) => handleFilterChange('practiceType', e.target.value)}
-            className="input"
+            <FileText className="w-4 h-4 inline mr-2" />
+            Заявки на практику
+            {applications.filter(a => a.status === 'PENDING').length > 0 && (
+              <span className="ml-2 px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 rounded-full text-xs">
+                {applications.filter(a => a.status === 'PENDING').length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('courses')}
+            className={`px-6 py-3 font-semibold transition-all duration-200 border-b-2 ${
+              activeTab === 'courses'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
           >
-            <option value="">Все типы практики</option>
-            <option value="EDUCATIONAL">Учебная</option>
-            <option value="PRODUCTION">Производственная</option>
-            <option value="INTERNSHIP">Стажировка</option>
-          </select>
+            <BookOpen className="w-4 h-4 inline mr-2" />
+            Заявки на курсы
+            {courseEnrollments.length > 0 && (
+              <span className="ml-2 px-2 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 rounded-full text-xs">
+                {courseEnrollments.length}
+              </span>
+            )}
+          </button>
         </div>
+      )}
 
-        <p className="text-sm text-gray-600 dark:text-gray-400">
-          Найдено: {pagination.total} заявок
-        </p>
-      </div>
+      {}
+      {(activeTab === 'practice' || user?.role !== 'teacher') && (
+        <>
+          <div className="card">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <select
+                value={filters.status}
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+                className="input"
+              >
+                <option value="">Все статусы</option>
+                <option value="PENDING">На рассмотрении</option>
+                <option value="APPROVED">Одобренные</option>
+                <option value="REJECTED">Отклоненные</option>
+              </select>
 
-      <div className="card overflow-x-auto">
-        {loading ? (
-          <div className="flex items-center justify-center h-64">
-            <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+              <select
+                value={filters.practiceType}
+                onChange={(e) => handleFilterChange('practiceType', e.target.value)}
+                className="input"
+              >
+                <option value="">Все типы практики</option>
+                <option value="EDUCATIONAL">Учебная</option>
+                <option value="PRODUCTION">Производственная</option>
+                <option value="INTERNSHIP">Стажировка</option>
+              </select>
+            </div>
+
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Найдено: {pagination.total} заявок
+            </p>
           </div>
-        ) : applications.length === 0 ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
-            Заявки не найдены
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {applications.map((app) => (
+
+          <div className="card overflow-x-auto">
+            {loading ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+              </div>
+            ) : applications.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                Заявки не найдены
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {applications.map((app) => (
               <div
                 key={app.id}
                 className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
@@ -250,13 +355,96 @@ function Applications() {
                         </button>
                       </>
                     )}
+                    {user?.role === 'admin' && (
+                      <button
+                        onClick={() => handleDelete(app.id)}
+                        className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                        title="Удалить заявку"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
-            ))}
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
+
+      {/* Заявки на курсы (только для преподавателя) */}
+      {user?.role === 'teacher' && activeTab === 'courses' && (
+        <div className="card overflow-x-auto">
+          {courseEnrollments.length === 0 ? (
+            <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+              <BookOpen className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+              <p className="text-lg">Заявки на курсы не найдены</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {courseEnrollments.map((enrollment) => (
+                <div
+                  key={enrollment.id}
+                  className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                          {enrollment.course?.title}
+                        </h3>
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400">
+                          Ожидает одобрения
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm text-gray-600 dark:text-gray-400 mb-2">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4" />
+                          <span>
+                            <span className="font-medium">Студент:</span>{' '}
+                            {enrollment.studentUser?.username || enrollment.studentUser?.email || 'Не указан'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-4 h-4" />
+                          <span>
+                            <span className="font-medium">Направление:</span>{' '}
+                            {enrollment.course?.direction}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="font-medium">Подана:</span>{' '}
+                          {format(new Date(enrollment.createdAt), 'dd.MM.yyyy HH:mm', { locale: ru })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 ml-4">
+                      <button
+                        onClick={() => handleApproveEnrollment(enrollment.id)}
+                        className="p-2 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition-colors"
+                        title="Одобрить"
+                      >
+                        <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                      </button>
+                      <button
+                        onClick={() => handleRejectEnrollment(enrollment.id)}
+                        className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                        title="Отклонить"
+                      >
+                        <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Модальное окно для деталей заявки */}
       {selectedApplication && (

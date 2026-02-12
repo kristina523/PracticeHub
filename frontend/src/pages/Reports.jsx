@@ -191,6 +191,7 @@ function Reports() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+
       </div>
     </div>
   );

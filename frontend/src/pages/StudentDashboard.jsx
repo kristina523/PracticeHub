@@ -1,213 +1,294 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
-import { Calendar, FileText, CheckCircle, Clock, Plus } from 'lucide-react';
+import { Calendar, FileText, CheckCircle, Clock, Plus, BookOpen, Loader2, AlertCircle } from 'lucide-react';
+import { format, isPast } from 'date-fns';
+import { ru } from 'date-fns/locale';
 import api from '../utils/api';
+
+// Цвета для карточек курсов (как в Google Classroom)
+const courseColors = [
+  '#4285F4', '#34A853', '#FBBC04', '#EA4335', '#FF6D01',
+  '#9334E6', '#E8710A', '#0F9D58', '#DB4437', '#F4B400'
+];
 
 function StudentDashboard() {
   const { user } = useAuthStore();
   const navigate = useNavigate();
   const [studentData, setStudentData] = useState(null);
+  const [courses, setCourses] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user?.studentId) {
-      fetchStudentData();
-    } else {
-      setLoading(false);
-    }
-  }, [user]);
+    fetchData();
+  }, []);
 
-  const fetchStudentData = async () => {
+  const fetchData = async () => {
+    setLoading(true);
     try {
-      const response = await api.get(`/students/${user.studentId}`);
-      setStudentData(response.data);
+      const promises = [];
+      
+      if (user?.studentId) {
+        promises.push(api.get(`/students/${user.studentId}`).catch(() => ({ data: null })));
+      } else {
+        promises.push(Promise.resolve({ data: null }));
+      }
+      
+      promises.push(api.get('/course-enrollments').catch(() => ({ data: { courses: [] } })));
+      promises.push(api.get('/tasks').catch(() => ({ data: { tasks: [] } })));
+
+      const [studentRes, coursesRes, tasksRes] = await Promise.all(promises);
+      
+      setStudentData(studentRes.data);
+      setCourses(coursesRes.data?.courses || []);
+      setTasks(tasksRes.data?.tasks || []);
     } catch (error) {
-      console.error('Ошибка загрузки данных студента:', error);
+      console.error('Ошибка загрузки данных:', error);
     } finally {
       setLoading(false);
     }
   };
 
+  // Проверка, пропущен ли срок задания
+  const isOverdue = (task) => {
+    const deadline = new Date(task.deadline);
+    const submissionStatus = task.submissions?.[0]?.status;
+    // Задание пропущено, если дедлайн прошел и задание не завершено
+    return isPast(deadline) && submissionStatus !== 'COMPLETED' && task.status !== 'COMPLETED';
+  };
+
+  // Получаем пропущенные задания
+  const overdueTasks = tasks.filter(task => isOverdue(task));
+
+  const getCourseColor = (index) => {
+    return courseColors[index % courseColors.length];
+  };
+
+  const getInitials = (name) => {
+    if (!name) return 'К';
+    const words = name.split(' ');
+    if (words.length >= 2) {
+      return (words[0][0] + words[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-gray-500 dark:text-gray-400">Загрузка...</div>
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
       </div>
     );
   }
 
-  const getStatusBadge = (status) => {
-    const statusMap = {
-      PENDING: { label: 'Ожидает', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' },
-      ACTIVE: { label: 'Активна', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' },
-      COMPLETED: { label: 'Завершена', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' }
-    };
-    const statusInfo = statusMap[status] || statusMap.PENDING;
-    return (
-      <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusInfo.color}`}>
-        {statusInfo.label}
-      </span>
-    );
-  };
-
-  const getPracticeTypeLabel = (type) => {
-    const typeMap = {
-      EDUCATIONAL: 'Учебная',
-      PRODUCTION: 'Производственная',
-      INTERNSHIP: 'Стажировка'
-    };
-    return typeMap[type] || type;
-  };
+  // Фильтруем только одобренные курсы
+  const approvedCourses = courses.filter(c => c.enrollment?.status === 'APPROVED');
 
   return (
     <div className="space-y-6">
+      {/* Заголовок */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Добро пожаловать, {user?.username}!
+        <h1 className="text-2xl font-normal text-gray-900 mb-1">
+          Главная страница
         </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Ваша панель управления практикой
-        </p>
       </div>
 
-      {studentData ? (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="card">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Статус практики
-                  </p>
-                  <div className="mt-2">
-                    {getStatusBadge(studentData.status)}
-                  </div>
-                </div>
-                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
-                  <CheckCircle className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                </div>
-              </div>
+      {/* Информация о практике (если есть) */}
+      {studentData && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-500">Практика</p>
+              <p className="text-base font-medium text-gray-900 mt-1">
+                {studentData.lastName} {studentData.firstName} {studentData.middleName || ''}
+              </p>
+              <p className="text-sm text-gray-600 mt-1">
+                {studentData.institutionName}
+              </p>
             </div>
-
-            <div className="card">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Тип практики
-                  </p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white mt-2">
-                    {getPracticeTypeLabel(studentData.practiceType)}
-                  </p>
-                </div>
-                <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
-                  <FileText className="w-6 h-6 text-purple-600 dark:text-purple-400" />
-                </div>
-              </div>
+            <div className="text-right">
+              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                studentData.status === 'ACTIVE' 
+                  ? 'bg-green-100 text-green-800'
+                  : studentData.status === 'COMPLETED'
+                  ? 'bg-gray-100 text-gray-800'
+                  : 'bg-yellow-100 text-yellow-800'
+              }`}>
+                {studentData.status === 'ACTIVE' ? 'Активна' : studentData.status === 'COMPLETED' ? 'Завершена' : 'Ожидает'}
+              </span>
             </div>
-
-            <div className="card">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Курс
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white mt-2">
-                    {studentData.course}
-                  </p>
-                </div>
-                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-lg">
-                  <Clock className="w-6 h-6 text-green-600 dark:text-green-400" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="card">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                Информация о практике
-              </h2>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">ФИО:</span>
-                  <span className="text-gray-900 dark:text-white font-medium">
-                    {studentData.lastName} {studentData.firstName} {studentData.middleName || ''}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Учебное заведение:</span>
-                  <span className="text-gray-900 dark:text-white font-medium">
-                    {studentData.institutionName}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Руководитель:</span>
-                  <span className="text-gray-900 dark:text-white font-medium">
-                    {studentData.supervisor || 'Не указан'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="card">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                Сроки практики
-              </h2>
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Начало:</span>
-                  <span className="text-gray-900 dark:text-white font-medium">
-                    {new Date(studentData.startDate).toLocaleDateString('ru-RU')}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Окончание:</span>
-                  <span className="text-gray-900 dark:text-white font-medium">
-                    {new Date(studentData.endDate).toLocaleDateString('ru-RU')}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                  <span className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Дней осталось:
-                  </span>
-                  <span className="text-gray-900 dark:text-white font-bold text-lg">
-                    {Math.max(0, Math.ceil((new Date(studentData.endDate) - new Date()) / (1000 * 60 * 60 * 24)))}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {studentData.notes && (
-            <div className="card">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-                Заметки
-              </h2>
-              <p className="text-gray-700 dark:text-gray-300">{studentData.notes}</p>
-            </div>
-          )}
-        </>
-      ) : (
-        <div className="card">
-          <div className="text-center py-8">
-            <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Данные о практике не найдены.
-            </p>
-            <button
-              onClick={() => navigate('/student/application')}
-              className="btn btn-primary inline-flex items-center gap-2"
-            >
-              <Plus className="w-5 h-5" />
-              Подать заявку на практику
-            </button>
           </div>
         </div>
       )}
+
+      {/* Пропущенные задания */}
+      {overdueTasks.length > 0 && (
+        <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-6">
+          <div className="flex items-start justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+              <h2 className="text-lg font-semibold text-red-900">
+                Пропущенные сроки заданий
+              </h2>
+              <span className="bg-red-600 text-white text-xs rounded-full px-2 py-1 font-semibold">
+                {overdueTasks.length}
+              </span>
+            </div>
+            <Link
+              to="/student/tasks?filter=overdue"
+              className="text-sm text-red-600 hover:text-red-700 hover:underline font-medium"
+            >
+              Посмотреть все
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {overdueTasks.slice(0, 3).map((task) => (
+              <div
+                key={task.id}
+                className="bg-white rounded-lg border border-red-200 p-3 hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h3 className="font-medium text-gray-900 mb-1">{task.title}</h3>
+                    {task.course && (
+                      <p className="text-xs text-gray-600 mb-1">
+                        Курс: {task.course.title}
+                      </p>
+                    )}
+                    <p className="text-xs text-red-600 font-medium">
+                      Дедлайн: {format(new Date(task.deadline), 'dd.MM.yyyy HH:mm', { locale: ru })}
+                    </p>
+                  </div>
+                  <Link
+                    to={`/student/tasks/${task.id}`}
+                    className="ml-4 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded-lg font-medium transition-colors"
+                  >
+                    Выполнить
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Курсы */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-normal text-gray-900">Курсы</h2>
+          <Link 
+            to="/student/courses" 
+            className="text-sm text-blue-600 hover:text-blue-700 hover:underline"
+          >
+            Все
+          </Link>
+        </div>
+
+        {approvedCourses.length === 0 ? (
+          <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+            <BookOpen className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 mb-4">У вас пока нет курсов</p>
+            <Link
+              to="/student/courses"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Записаться на курс
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {approvedCourses.map((course, index) => {
+              const color = getCourseColor(index);
+              const initials = getInitials(course.title);
+              
+              return (
+                <Link
+                  key={course.id}
+                  to={`/student/courses/${course.id}/tasks`}
+                  className="bg-white rounded-lg border border-gray-200 hover:shadow-md transition-shadow overflow-hidden"
+                >
+                  {/* Цветной заголовок */}
+                  <div 
+                    className="h-24 flex items-center justify-center"
+                    style={{ backgroundColor: color }}
+                  >
+                    <span className="text-white text-3xl font-normal">{initials}</span>
+                  </div>
+                  
+                  {/* Контент карточки */}
+                  <div className="p-4">
+                    <h3 className="text-base font-normal text-gray-900 mb-1 line-clamp-2">
+                      {course.title}
+                    </h3>
+                    {course.direction && (
+                      <p className="text-sm text-gray-500 mb-2">{course.direction}</p>
+                    )}
+                    {course.teacher && (
+                      <p className="text-sm text-gray-600">
+                        {course.teacher.firstName} {course.teacher.lastName}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Быстрые действия */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Link
+          to="/student/courses"
+          className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+              <BookOpen className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Все курсы</p>
+              <p className="text-xs text-gray-500">Просмотр и запись</p>
+            </div>
+          </div>
+        </Link>
+
+        <Link
+          to="/student/tasks"
+          className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+              <FileText className="w-5 h-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">Задания</p>
+              <p className="text-xs text-gray-500">Просмотр и выполнение</p>
+            </div>
+          </div>
+        </Link>
+
+        {!studentData && (
+          <Link
+            to="/student/application"
+            className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                <Plus className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">Подать заявку</p>
+                <p className="text-xs text-gray-500">На практику</p>
+              </div>
+            </div>
+          </Link>
+        )}
+      </div>
     </div>
   );
 }
 
 export default StudentDashboard;
-

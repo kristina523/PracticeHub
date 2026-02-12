@@ -1,140 +1,284 @@
+// prisma/schema.prisma
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-// ПЕРВОЕ: определите все enum ДО их использования
-enum PracticeType {
-  EDUCATIONAL   
-  PRODUCTION     
-  INTERNSHIP     
+model Admin {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-enum PracticeStatus {
-  PENDING        
-  ACTIVE      
-  COMPLETED      
+model Teacher {
+  id         String   @id @default(cuid())
+  username   String   @unique
+  email      String   @unique
+  password   String
+  firstName  String
+  lastName   String
+  middleName String?
+  phone      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  courses    Course[]
 }
 
-enum ApplicationStatus {
-  PENDING
-  APPROVED
-  REJECTED
+model StudentUser {
+  id          String   @id @default(cuid())
+  telegramId  String?  @unique
+  username    String?  @unique
+  email       String?  @unique
+  password    String
+  privacyAccepted   Boolean  @default(false)
+  privacyAcceptedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  student     Student?
+  applications PracticeApplication[]
+  assignedTasks   Task[]           @relation("TaskAssignedBy")
+  reviewedSubmissions TaskSubmission[] @relation("SubmissionReviewedBy")
+  courseEnrollments CourseEnrollment[]
+  webinarRegistrations WebinarRegistration[]
 }
 
-enum InstitutionType {
-  COLLEGE      
-  UNIVERSITY     
+model Student {
+  id                String   @id @default(cuid())
+  firstName         String
+  lastName          String
+  middleName        String?
+  practiceType      String
+  institutionId     String?
+  institutionName   String?
+  course            Int?
+  email             String?
+  phone             String?
+  telegramId        String?
+  supervisor        String?
+  notes             String?
+  startDate         DateTime?
+  endDate           DateTime?
+  status            String   @default("PENDING")
+  privacyAccepted   Boolean  @default(false)
+  privacyAcceptedAt DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  userId            String?  @unique
+  user              StudentUser? @relation(fields: [userId], references: [id])
+  institution       Institution? @relation(fields: [institutionId], references: [id])
+  applications      PracticeApplication[]
+  tasks             Task[]
+  submissions       TaskSubmission[]
+  
+  @@index([userId])
+  @@index([institutionId])
+  @@index([status])
 }
 
-enum UserRole {
-  ADMIN
-  TEACHER
-  STUDENT
-}
-
-// ВТОРОЕ: определите модель Institution ДО модели Student
 model Institution {
-  id          String    @id @default(uuid())
-  name        String    
-  type        InstitutionType
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id          String   @id @default(cuid())
+  name        String
+  type        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
   students    Student[]
 }
 
-// ТРЕТЬЕ: теперь можно использовать Institution в Student
-model Student {
-  id                String         @id @default(uuid())
-  lastName          String        
-  firstName         String        
-  middleName        String?    
-  practiceType      PracticeType
-  institutionId     String
-  institutionName   String        
-  course            Int     
-  email             String?
-  phone             String?
-  telegramId        String?
-  startDate         DateTime
-  endDate           DateTime
-  status            PracticeStatus 
-  supervisor        String?     
-  notes             String?      
-  privacyAccepted   Boolean        @default(false)
-  privacyAcceptedAt DateTime?
-  
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  
-  institution       Institution    @relation(fields: [institutionId], references: [id])
-}
-
-model Admin {
-  id          String    @id @default(uuid())
-  username    String    @unique
-  email       String    @unique
-  password    String
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-}
-
-model Teacher {
-  id          String    @id @default(uuid())
-  username    String    @unique
-  email       String    @unique
-  password    String
-  firstName   String
-  lastName    String
-  middleName  String?
-  phone       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-}
-
-model StudentUser {
-  id                  String               @id @default(uuid())
-  username            String               @unique
-  email               String               @unique
-  password            String
-  studentId           String?              @unique
-  telegramId          String?              @unique
-  privacyAccepted     Boolean              @default(false)
-  privacyAcceptedAt   DateTime?
-  createdAt           DateTime             @default(now())
-  updatedAt           DateTime             @updatedAt
-  
-  applications        PracticeApplication[]
-}
-
 model PracticeApplication {
-  id                String            @id @default(uuid())
-  studentUserId     String
-  lastName          String
+  id                String   @id @default(cuid())
   firstName         String
+  lastName          String
   middleName        String?
-  practiceType      PracticeType
+  practiceType      String
+  institutionType   String
   institutionName   String
-  course            Int
-  email             String?
-  phone             String?
+  course            Int?
+  email             String
+  phone             String
   telegramId        String?
-  startDate         DateTime
-  endDate           DateTime
-  status            ApplicationStatus @default(PENDING)
+  startDate         DateTime?
+  endDate           DateTime?
+  status            String   @default("PENDING")
   rejectionReason   String?
-  approvedBy        String? // ID администратора или преподавателя
   notes             String?
-  privacyAccepted   Boolean           @default(false)
+  approvedBy        String?
+  privacyAccepted   Boolean  @default(false)
   privacyAcceptedAt DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
   
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  studentUserId     String?
+  studentUser       StudentUser? @relation(fields: [studentUserId], references: [id])
   
-  studentUser       StudentUser       @relation(fields: [studentUserId], references: [id], onDelete: Cascade)
+  // Добавляем обратную связь к Student
+  studentId         String?
+  student           Student?  @relation(fields: [studentId], references: [id])
+  
+  @@index([studentUserId])
+  @@index([studentId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Для PostgreSQL используем String вместо enum
+model Task {
+  id              String   @id @default(uuid())
+  title           String
+  description     String
+  status          String   @default("PENDING")  // Возможные значения: PENDING, IN_PROGRESS, SUBMITTED, UNDER_REVIEW, COMPLETED, EXPIRED, REJECTED, DELETED
+  deadline        DateTime
+  referenceLink   String?
+  allowLateSubmission Boolean @default(true)  // Разрешить отправку после дедлайна
+  assignedById    String
+  assignedBy      StudentUser?   @relation(fields: [assignedById], references: [id], name: "TaskAssignedBy")
+  studentId       String?
+  student         Student?       @relation(fields: [studentId], references: [id])
+  courseId        String?
+  course          Course?        @relation(fields: [courseId], references: [id])
+  groupId         String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  completedAt     DateTime?
+  
+  submissions     TaskSubmission[]
+  
+  @@index([studentId])
+  @@index([assignedById])
+  @@index([deadline])
+  @@index([status])
+}
+
+model TaskSubmission {
+  id                  String   @id @default(uuid())
+  taskId              String
+  studentId           String
+  solutionDescription String?
+  solutionLink        String?
+  attachments         String?
+  status              String   @default("SUBMITTED")  // Возможные значения: SUBMITTED, UNDER_REVIEW, COMPLETED, REJECTED
+  submittedAt         DateTime @default(now())
+  reviewComment       String?
+  reviewedAt          DateTime?
+  reviewedById        String?
+  reviewedBy          StudentUser?     @relation(fields: [reviewedById], references: [id], name: "SubmissionReviewedBy")
+  grade               Int?             // Оценка от 1 до 10
+  
+  task                Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  student             Student          @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  @@unique([taskId, studentId])
+  @@index([studentId])
+  @@index([taskId])
+  @@index([status])
+  @@index([submittedAt])
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  direction   String   // Направление: программирование, веб-разработка, мобильная разработка и т.д.
+  imageUrl    String?  // URL изображения курса
+  teacherId   String
+  teacher     Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  materials   CourseMaterial[]
+  enrollments CourseEnrollment[]
+  tasks       Task[]
+  
+  @@index([teacherId])
+  @@index([direction])
+}
+
+model CourseMaterial {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  content     String?  // Содержимое материала (текст, HTML, markdown)
+  fileUrl     String?  // Ссылка на файл (PDF, видео и т.д.)
+  materialType String  @default("TEXT") // TEXT, VIDEO, PDF, LINK, etc.
+  order       Int      @default(0) // Порядок отображения
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([courseId])
+  @@index([order])
+}
+
+model CourseEnrollment {
+  id            String   @id @default(cuid())
+  courseId      String
+  course        Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  studentUserId String
+  studentUser   StudentUser @relation(fields: [studentUserId], references: [id], onDelete: Cascade)
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  messages      CourseChatMessage[]
+  
+  @@unique([courseId, studentUserId])
+  @@index([studentUserId])
+  @@index([status])
+}
+
+model CourseChatMessage {
+  id            String   @id @default(cuid())
+  enrollmentId  String
+  enrollment    CourseEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  senderId      String   // ID отправителя (StudentUser.id или Teacher.id)
+  senderType    String   // "STUDENT" или "TEACHER"
+  message       String
+  readAt        DateTime?
+  createdAt     DateTime @default(now())
+  
+  @@index([enrollmentId])
+  @@index([createdAt])
+}
+
+model Webinar {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  link          String   // Ссылка на вебинар (Zoom, Google Meet и т.д.)
+  startTime     DateTime
+  endTime       DateTime
+  maxParticipants Int?   // Максимальное количество участников
+  createdById   String   // ID админа, создавшего вебинар
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  registrations WebinarRegistration[]
+  
+  @@index([startTime])
+  @@index([createdById])
+}
+
+model WebinarRegistration {
+  id            String   @id @default(cuid())
+  webinarId     String
+  webinar       Webinar  @relation(fields: [webinarId], references: [id], onDelete: Cascade)
+  studentUserId String
+  studentUser   StudentUser @relation(fields: [studentUserId], references: [id], onDelete: Cascade)
+  registeredAt  DateTime @default(now())
+  
+  @@unique([webinarId, studentUserId])
+  @@index([studentUserId])
+  @@index([webinarId])
 }

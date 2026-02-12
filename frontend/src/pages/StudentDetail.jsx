@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuthStore } from '../store/authStore';
 import api from '../utils/api';
 import { ArrowLeft, Edit, Trash2, Loader2, Mail, Phone, Calendar, User, School, BookOpen } from 'lucide-react';
 import { format } from 'date-fns';
@@ -7,6 +8,7 @@ import { ru } from 'date-fns/locale';
 
 
 const getFullName = (student) => {
+  if (!student) return 'Не указано';
   const parts = [student.lastName, student.firstName];
   if (student.middleName) parts.push(student.middleName);
   return parts.join(' ');
@@ -33,21 +35,45 @@ const statusColors = {
 function StudentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuthStore();
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Определяем базовый путь в зависимости от роли и текущего пути
+  const getBasePath = () => {
+    // Проверяем текущий путь или роль пользователя
+    if (location.pathname.includes('/teacher/') || user?.role === 'teacher') {
+      return '/teacher/students';
+    }
+    return '/students';
+  };
 
   useEffect(() => {
     fetchStudent();
   }, [id]);
 
   const fetchStudent = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const response = await api.get(`/students/${id}`);
+      // Обработка виртуальных студентов (ID начинается с user_)
+      const studentId = id.startsWith('user_') ? id.replace('user_', '') : id;
+      
+      // Для виртуальных студентов API может не работать, поэтому показываем сообщение
+      if (id.startsWith('user_')) {
+        setError('Это виртуальная запись студента. Детальная информация недоступна.');
+        setLoading(false);
+        return;
+      }
+
+      const response = await api.get(`/students/${studentId}`);
       setStudent(response.data);
     } catch (error) {
       console.error('Ошибка получения студента:', error);
-      alert('Ошибка загрузки данных студента');
-      navigate('/students');
+      setError(error.response?.data?.message || 'Ошибка загрузки данных студента');
+      // Не делаем автоматический редирект, показываем ошибку
     } finally {
       setLoading(false);
     }
@@ -60,7 +86,7 @@ function StudentDetail() {
 
     try {
       await api.delete(`/students/${id}`);
-      navigate('/students');
+      navigate(getBasePath());
     } catch (error) {
       alert('Ошибка при удалении: ' + (error.response?.data?.message || error.message));
     }
@@ -74,22 +100,39 @@ function StudentDetail() {
     );
   }
 
-  if (!student) {
+  if (error || !student) {
     return (
-      <div className="text-center py-12">
-        <p className="text-gray-500 dark:text-gray-400">Студент не найден</p>
-        <Link to="/students" className="btn btn-primary mt-4">
-          Вернуться к списку
-        </Link>
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Link to={getBasePath()} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+            <ArrowLeft className="w-5 h-5" />
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              Ошибка загрузки
+            </h1>
+          </div>
+        </div>
+        <div className="card">
+          <div className="text-center py-12">
+            <p className="text-red-600 dark:text-red-400 mb-4">{error || 'Студент не найден'}</p>
+            <Link to={getBasePath()} className="btn btn-primary">
+              Вернуться к списку
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
+
+  const basePath = getBasePath();
+  const isTeacher = location.pathname.includes('/teacher/');
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <Link to="/students" className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+          <Link to={basePath} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
@@ -101,22 +144,28 @@ function StudentDetail() {
             </p>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Link
-            to={`/students/${id}/edit`}
-            className="btn btn-secondary flex items-center gap-2"
-          >
-            <Edit className="w-4 h-4" />
-            Редактировать
-          </Link>
-          <button
-            onClick={handleDelete}
-            className="btn btn-danger flex items-center gap-2"
-          >
-            <Trash2 className="w-4 h-4" />
-            Удалить
-          </button>
-        </div>
+        {isTeacher && (
+          <div className="flex gap-2">
+            {student.status === 'PENDING' && (
+              <button
+                onClick={async () => {
+                  if (window.confirm('Активировать практику для этого студента?')) {
+                    try {
+                      await api.put(`/students/${id}`, { status: 'ACTIVE' });
+                      fetchStudent();
+                      alert('Статус обновлен на "Активна"');
+                    } catch (error) {
+                      alert('Ошибка обновления статуса: ' + (error.response?.data?.message || error.message));
+                    }
+                  }
+                }}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+              >
+                Активировать практику
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -12,6 +12,13 @@ import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
 import applicationRoutes from './routes/applications.js';
 import notificationRoutes from './routes/notifications.js';
+import taskRoutes from './routes/tasks.js';
+import courseRoutes from './routes/courses.js';
+import courseMaterialRoutes from './routes/courseMaterials.js';
+import courseEnrollmentRoutes from './routes/courseEnrollments.js';
+import courseChatRoutes from './routes/courseChat.js';
+import teacherRoutes from './routes/teachers.js';
+import webinarRoutes from './routes/webinars.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -77,6 +84,13 @@ app.use('/api/institutions', institutionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/courses', courseRoutes);
+app.use('/api/course-materials', courseMaterialRoutes);
+app.use('/api/course-enrollments', courseEnrollmentRoutes);
+app.use('/api/course-chat', courseChatRoutes);
+app.use('/api/teachers', teacherRoutes);
+app.use('/api/webinars', webinarRoutes);
 
 
 app.use(express.static(path.join(__dirname, '../public')));
@@ -99,14 +113,29 @@ app.listen(PORT, async () => {
   // Запускаем Telegram-бота (только если токен установлен)
   if (process.env.TELEGRAM_BOT_TOKEN) {
     try {
-      await import('./bot/telegramBot.js');
-      console.log('✅ Telegram-бот успешно запущен');
+      const botModule = await import('./bot/telegramBot.js');
+      // Бот инициализируется автоматически при импорте модуля
+      console.log('✅ Telegram-бот модуль загружен');
     } catch (error) {
       console.error('❌ Ошибка запуска Telegram-бота:', error.message);
+      console.error('Детали:', error);
     }
   } else {
     console.log('⚠️ Telegram-бот не запущен (TELEGRAM_BOT_TOKEN не установлен)');
   }
+});
+
+// Обработка необработанных ошибок промисов (чтобы ошибки бота не падали сервер)
+process.on('unhandledRejection', (reason, promise) => {
+  if (reason && typeof reason === 'object' && reason.code === 'ETELEGRAM') {
+    const error = reason;
+    if (error.response?.body?.description?.includes('blocked')) {
+      console.warn('⚠️ Telegram бот заблокирован пользователем, игнорируем ошибку');
+      return;
+    }
+  }
+  console.error('❌ Необработанная ошибка промиса:', reason);
+  // Не завершаем процесс, чтобы сервер продолжал работать
 });
 
 process.on('SIGTERM', async () => {

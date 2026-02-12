@@ -22,13 +22,17 @@ function Login() {
   }, [location]);
 
   useEffect(() => {
+    console.log('Login useEffect:', { isAuthenticated, user, role: user?.role });
     if (isAuthenticated) {
       // Перенаправляем в зависимости от роли
       if (user?.role === 'teacher') {
+        console.log('Navigating to /teacher');
         navigate('/teacher');
       } else if (user?.role === 'student') {
+        console.log('Navigating to /student');
         navigate('/student');
       } else {
+        console.log('Navigating to /');
         navigate('/');
       }
     }

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { useAuthStore } from '../store/authStore';
 import api from '../utils/api';
-import { Plus, Search, Filter, Download, Loader2, Edit, Trash2, Eye, UserCheck, UserX } from 'lucide-react';
+import { Search, Filter, Download, Loader2, Edit, Trash2, Eye, UserCheck, UserX } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
@@ -30,6 +31,8 @@ const statusColors = {
 };
 
 function Students() {
+  const location = useLocation();
+  const { user } = useAuthStore();
   const [students, setStudents] = useState([]);
   const [institutions, setInstitutions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +40,9 @@ function Students() {
   const [filters, setFilters] = useState({
     practiceType: '',
     status: '',
-    institutionId: ''
+    institutionId: '',
+    // По умолчанию показываем только зарегистрированных студентов
+    isRegistered: 'true'
   });
   const [pagination, setPagination] = useState({
     page: 1,
@@ -45,6 +50,15 @@ function Students() {
     total: 0,
     pages: 0
   });
+
+  // Определяем базовый путь для ссылок в зависимости от роли пользователя
+  const getBasePath = () => {
+    // Проверяем текущий путь или роль пользователя
+    if (location.pathname.includes('/teacher/') || user?.role === 'teacher') {
+      return '/teacher/students';
+    }
+    return '/students';
+  };
 
   useEffect(() => {
     fetchInstitutions();
@@ -73,12 +87,22 @@ function Students() {
         ...(filters.practiceType && { practiceType: filters.practiceType }),
         ...(filters.status && { status: filters.status }),
         ...(filters.institutionId && { institutionId: filters.institutionId }),
-        ...(filters.isRegistered !== '' && { isRegistered: filters.isRegistered })
+        ...(filters.isRegistered !== '' && filters.isRegistered !== undefined && { isRegistered: filters.isRegistered })
       };
 
       const response = await api.get('/students', { params });
-      setStudents(response.data.students);
-      setPagination(response.data.pagination);
+      const allStudents = response.data.students || [];
+
+      // Показываем только реально существующих студентов с зарегистрированным аккаунтом
+      const realRegisteredStudents = allStudents.filter(
+        (s) => s.isRegistered && !s.isVirtual
+      );
+
+      setStudents(realRegisteredStudents);
+      setPagination(prev => ({
+        ...response.data.pagination,
+        total: realRegisteredStudents.length
+      }));
     } catch (error) {
       console.error('Ошибка получения студентов:', error);
     } finally {
@@ -128,19 +152,13 @@ function Students() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Практиканты
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Управление студентами, проходящими практику
-          </p>
-        </div>
-        <Link to="/students/new" className="btn btn-primary flex items-center gap-2">
-          <Plus className="w-5 h-5" />
-          Добавить практиканта
-        </Link>
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+          Практиканты
+        </h1>
+        <p className="text-gray-600 dark:text-gray-400 mt-2">
+          Управление студентами, проходящими практику
+        </p>
       </div>
 
       <div className="card">
@@ -328,19 +346,21 @@ function Students() {
                         ) : (
                           <>
                             <Link
-                              to={`/students/${student.id}`}
+                              to={`${getBasePath()}/${student.id}`}
                               className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
                               title="Просмотр"
                             >
                               <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                             </Link>
-                            <Link
-                              to={`/students/${student.id}/edit`}
-                              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                              title="Редактировать"
-                            >
-                              <Edit className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                            </Link>
+                            {user?.role === 'admin' && (
+                              <Link
+                                to={`${getBasePath()}/${student.id}/edit`}
+                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                title="Редактировать"
+                              >
+                                <Edit className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                              </Link>
+                            )}
                             <button
                               onClick={() => handleDelete(student.id)}
                               className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"

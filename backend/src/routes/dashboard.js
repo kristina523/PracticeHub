@@ -129,6 +129,44 @@ router.get('/stats', authenticateToken, async (req, res) => {
       }
     });
 
+    // Статистика по курсам, на которые регистрируются студенты (все статусы)
+    const enrollments = await prisma.courseEnrollment.findMany({
+      select: {
+        courseId: true,
+        course: {
+          select: {
+            id: true,
+            title: true
+          }
+        }
+      }
+    });
+
+    console.log('📊 Всего регистраций на курсы:', enrollments.length);
+
+    // Группируем вручную по courseId
+    const enrollmentMap = new Map();
+    enrollments.forEach(enrollment => {
+      if (!enrollment.courseId) return;
+      const courseId = enrollment.courseId;
+      if (enrollmentMap.has(courseId)) {
+        enrollmentMap.set(courseId, enrollmentMap.get(courseId) + 1);
+      } else {
+        enrollmentMap.set(courseId, 1);
+      }
+    });
+
+    const byEnrolledCourseWithNames = Array.from(enrollmentMap.entries()).map(([courseId, count]) => {
+      const enrollment = enrollments.find(e => e.courseId === courseId);
+      return {
+        courseId,
+        courseTitle: enrollment?.course?.title || 'Unknown',
+        count
+      };
+    }).sort((a, b) => b.count - a.count);
+
+    console.log('📊 Уникальных курсов с регистрациями:', byEnrolledCourseWithNames.length);
+
     res.json({
       totalStudents,
       activeStudents,
@@ -146,6 +184,7 @@ router.get('/stats', authenticateToken, async (req, res) => {
         course: item.course,
         count: item._count
       })),
+      byEnrolledCourse: byEnrolledCourseWithNames,
       upcomingStarts,
       upcomingEnds
     });

@@ -15,6 +15,8 @@ export const useAuthStore = create(
           const response = await api.post('/auth/login', { username, password, role });
           const { token, user } = response.data;
           
+          console.log('Login response:', { token: !!token, user, role: user?.role });
+          
           set({ 
             token, 
             user, 
@@ -24,11 +26,23 @@ export const useAuthStore = create(
           
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
           
+          console.log('Auth state after login:', { 
+            isAuthenticated: true, 
+            role: user?.role,
+            userId: user?.id 
+          });
+          
           return { success: true };
         } catch (error) {
+          console.error('Login error:', error);
+          console.error('Error details:', {
+            status: error.response?.status,
+            data: error.response?.data,
+            message: error.message
+          });
           return {
             success: false,
-            message: error.response?.data?.message || 'Ошибка при входе'
+            message: error.response?.data?.message || error.response?.data?.error || 'Ошибка при входе'
           };
         }
       },
