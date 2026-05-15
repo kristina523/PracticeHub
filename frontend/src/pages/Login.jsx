@@ -6,12 +6,11 @@ import { LogIn } from 'lucide-react';
 function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('admin');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
-  
-  const { login, isAuthenticated, user } = useAuthStore();
+
+  const { login, logout, isAuthenticated, user } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -22,19 +21,10 @@ function Login() {
   }, [location]);
 
   useEffect(() => {
-    console.log('Login useEffect:', { isAuthenticated, user, role: user?.role });
-    if (isAuthenticated) {
-      // Перенаправляем в зависимости от роли
-      if (user?.role === 'teacher') {
-        console.log('Navigating to /teacher');
-        navigate('/teacher');
-      } else if (user?.role === 'student') {
-        console.log('Navigating to /student');
-        navigate('/student');
-      } else {
-        console.log('Navigating to /');
-        navigate('/');
-      }
+    if (isAuthenticated && user?.role) {
+      if (user.role === 'teacher') navigate('/teacher', { replace: true });
+      else if (user.role === 'student') navigate('/student', { replace: true });
+      else navigate('/', { replace: true });
     }
   }, [isAuthenticated, user, navigate]);
 
@@ -43,65 +33,59 @@ function Login() {
     setError('');
     setLoading(true);
 
-    const result = await login(username, password, role);
-    
+    logout();
+
+    const result = await login(username.trim(), password);
+
     setLoading(false);
-    
-    if (result.success) {
-      // Навигация произойдет в useEffect
-    } else {
+
+    if (!result.success) {
       setError(result.message || 'Ошибка входа');
+      return;
     }
+
+    const role = result?.user?.role || useAuthStore.getState().user?.role;
+    if (role === 'teacher') navigate('/teacher', { replace: true });
+    else if (role === 'student') navigate('/student', { replace: true });
+    else navigate('/', { replace: true });
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
-      <div className="max-w-md w-full">
-        <div className="card">
+    <div className="min-h-screen px-4 py-8 md:py-12">
+      <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-6">
+        <section className="hidden lg:flex rounded-3xl border border-blue-200/60 bg-gradient-to-br from-blue-600 via-indigo-600 to-sky-500 p-10 text-white shadow-xl relative overflow-hidden">
+          <div className="absolute -right-16 -top-16 w-56 h-56 rounded-full bg-white/10" />
+          <div className="absolute right-10 bottom-10 w-40 h-40 rounded-full bg-sky-300/20" />
+          <div className="relative z-10 flex items-start">
+            <h1 className="text-5xl font-bold leading-tight">PracticeHub</h1>
+          </div>
+        </section>
+
+        <section className="card rounded-3xl p-6 md:p-8 lg:p-10">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-full mb-4">
-              <LogIn className="w-8 h-8 text-primary-600 dark:text-primary-400" />
+            <div className="inline-flex items-center justify-center w-14 h-14 bg-blue-100 rounded-2xl mb-4">
+              <LogIn className="w-7 h-7 text-blue-600" />
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              PracticeHub
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Войдите в систему управления практикантами
-            </p>
+            <h2 className="text-3xl font-bold text-slate-900">Вход в систему</h2>
+            <p className="text-slate-500 mt-2">Авторизуйтесь, чтобы продолжить работу</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
             {successMessage && (
-              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 text-green-700 dark:text-green-400 px-4 py-3 rounded-lg">
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl">
                 {successMessage}
               </div>
             )}
 
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl">
                 {error}
               </div>
             )}
 
             <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Роль
-              </label>
-              <select
-                id="role"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-                className="input"
-              >
-                <option value="admin">Администратор</option>
-                <option value="teacher">Преподаватель</option>
-                <option value="student">Студент</option>
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Имя пользователя
+              <label htmlFor="username" className="block text-sm font-medium text-slate-700 mb-2">
+                Имя пользователя или email
               </label>
               <input
                 id="username"
@@ -115,9 +99,18 @@ function Login() {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Пароль
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+                  Пароль
+                </label>
+                <Link
+                  to="/forgot-password"
+                  state={{ login: username }}
+                  className="text-sm text-blue-600 hover:underline font-medium"
+                >
+                  Забыли пароль?
+                </Link>
+              </div>
               <input
                 id="password"
                 type="password"
@@ -136,44 +129,23 @@ function Login() {
               {loading ? 'Вход...' : 'Войти'}
             </button>
 
-            <div className="space-y-2 text-center text-sm text-gray-600 dark:text-gray-400">
+            <div className="text-center text-sm text-slate-500 pt-1 space-y-2">
               <div>
                 Нет аккаунта?{' '}
-                {role === 'admin' && (
-                  <Link to="/register/admin" className="text-primary-600 dark:text-primary-400 hover:underline">
-                    Зарегистрировать администратора
-                  </Link>
-                )}
-                {role === 'teacher' && (
-                  <Link to="/register/teacher" className="text-primary-600 dark:text-primary-400 hover:underline">
-                    Зарегистрировать преподавателя
-                  </Link>
-                )}
-                {role === 'student' && (
-                  <Link to="/register/student" className="text-primary-600 dark:text-primary-400 hover:underline">
-                    Зарегистрировать студента
-                  </Link>
-                )}
+                <Link to="/register/student" className="text-blue-600 hover:underline font-medium">
+                  Регистрация студента
+                </Link>
+                {' · '}
+                <Link to="/register/teacher" className="text-blue-600 hover:underline font-medium">
+                  Регистрация преподавателя
+                </Link>
               </div>
-              {role === 'admin' && (
-                <div className="text-xs">
-                  Или{' '}
-                  <Link to="/register/teacher" className="text-primary-600 dark:text-primary-400 hover:underline">
-                    преподавателя
-                  </Link>
-                  {' / '}
-                  <Link to="/register/student" className="text-primary-600 dark:text-primary-400 hover:underline">
-                    студента
-                  </Link>
-                </div>
-              )}
             </div>
           </form>
-        </div>
+        </section>
       </div>
     </div>
   );
 }
 
 export default Login;
-

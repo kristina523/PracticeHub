@@ -19,6 +19,41 @@ async function sendTaskNotification(telegramId, message) {
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/**
+ * @swagger
+ * /api/tasks:
+ *   get:
+ *     summary: Получить список заданий
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: studentId
+ *         schema:
+ *           type: string
+ *         description: ID студента
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, IN_PROGRESS, COMPLETED, GRADED]
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Список заданий
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить все задания (для админа) или задания студента
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -314,6 +349,31 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}:
+ *   get:
+ *     summary: Получить задание по ID
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID задания
+ *     responses:
+ *       200:
+ *         description: Информация о задании
+ *       403:
+ *         description: Доступ запрещен
+ *       404:
+ *         description: Задание не найдено
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить конкретное задание
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -415,6 +475,60 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks:
+ *   post:
+ *     summary: Создать задание
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - description
+ *               - deadline
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 example: "Домашнее задание 1"
+ *               description:
+ *                 type: string
+ *                 example: "Описание задания"
+ *               deadline:
+ *                 type: string
+ *                 format: date-time
+ *               studentId:
+ *                 type: string
+ *                 description: ID студента (для личного задания)
+ *               courseId:
+ *                 type: string
+ *                 description: ID курса (для задания курса)
+ *               referenceLink:
+ *                 type: string
+ *                 format: uri
+ *                 description: Ссылка на референс
+ *               allowLateSubmission:
+ *                 type: boolean
+ *                 default: true
+ *                 description: Разрешить отправку после дедлайна
+ *     responses:
+ *       201:
+ *         description: Задание создано
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для админов и преподавателей)
+ *       404:
+ *         description: Студент или курс не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Создать задание (только админ/преподаватель)
 router.post('/', authenticateToken, [
   body('title').notEmpty().withMessage('Название задания обязательно'),
@@ -632,6 +746,49 @@ router.post('/', authenticateToken, [
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}/submit:
+ *   post:
+ *     summary: Отправить решение задания
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID задания
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               solutionDescription:
+ *                 type: string
+ *                 description: Описание решения
+ *               solutionLink:
+ *                 type: string
+ *                 format: uri
+ *                 description: Ссылка на решение
+ *               attachments:
+ *                 type: string
+ *                 description: Вложения
+ *     responses:
+ *       201:
+ *         description: Решение отправлено
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен или срок истек
+ *       404:
+ *         description: Задание или студент не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Отправить решение задания (студент)
 router.post('/:id/submit', authenticateToken, [
   body('solutionDescription').optional().isString(),
@@ -837,6 +994,40 @@ router.post('/:id/submit', authenticateToken, [
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}/submissions:
+ *   get:
+ *     summary: Получить все решения задания
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID задания
+ *     responses:
+ *       200:
+ *         description: Список решений
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 submissions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       403:
+ *         description: Доступ запрещен (только для админов и преподавателей)
+ *       404:
+ *         description: Задание не найдено
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить все решения задания (админ)
 router.get('/:id/submissions', authenticateToken, async (req, res) => {
   try {
@@ -886,11 +1077,64 @@ router.get('/:id/submissions', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}/submissions/{submissionId}/review:
+ *   patch:
+ *     summary: Проверить решение задания
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID задания
+ *       - in: path
+ *         name: submissionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID решения
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [UNDER_REVIEW, COMPLETED, REJECTED]
+ *               reviewComment:
+ *                 type: string
+ *                 description: Комментарий к проверке
+ *               grade:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 10
+ *                 description: Оценка
+ *     responses:
+ *       200:
+ *         description: Решение проверено
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для админов и преподавателей)
+ *       404:
+ *         description: Решение не найдено
+ *       401:
+ *         description: Не авторизован
+ */
 // Проверить решение (админ)
 router.patch('/:id/submissions/:submissionId/review', authenticateToken, [
   body('status').isIn(['UNDER_REVIEW', 'COMPLETED', 'REJECTED']).withMessage('Некорректный статус'),
-  body('reviewComment').optional().isString(),
-  body('grade').optional().custom((value) => {
+  body('reviewComment').optional({ nullable: true }).isString().withMessage('Комментарий должен быть строкой'),
+  body('grade').optional({ nullable: true }).custom((value) => {
     if (value === null || value === undefined || value === '') return true; // Пустое значение разрешено
     const num = parseInt(value);
     if (isNaN(num) || num < 1 || num > 10) {
@@ -1081,6 +1325,31 @@ router.patch('/:id/submissions/:submissionId/review', authenticateToken, [
   }
 });
 
+/**
+ * @swagger
+ * /api/tasks/{id}:
+ *   delete:
+ *     summary: Удалить задание
+ *     tags: [Tasks]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID задания
+ *     responses:
+ *       200:
+ *         description: Задание удалено
+ *       403:
+ *         description: Доступ запрещен (только для админов и преподавателей)
+ *       404:
+ *         description: Задание не найдено
+ *       401:
+ *         description: Не авторизован
+ */
 // Удалить задание (админ/преподаватель)
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {

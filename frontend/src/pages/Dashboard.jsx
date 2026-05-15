@@ -85,12 +85,8 @@ function Dashboard() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Дашборд
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Обзор системы управления практикантами
-        </p>
+        <h1 className="page-title">Дашборд</h1>
+        <p className="page-subtitle">Обзор системы управления практикантами</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -100,10 +96,10 @@ function Dashboard() {
             <div key={card.title} className="card">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                  <p className="text-sm font-medium text-slate-500">
                     {card.title}
                   </p>
-                  <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">
+                  <p className="text-3xl font-bold text-slate-900 mt-2">
                     {card.value}
                   </p>
                 </div>
@@ -118,16 +114,16 @@ function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">
             По типам практики
           </h2>
           <div className="space-y-3">
             {stats.byPracticeType.map((item) => (
               <div key={item.type} className="flex items-center justify-between">
-                <span className="text-gray-700 dark:text-gray-300">
+                <span className="text-slate-700">
                   {practiceTypeLabels[item.type]}
                 </span>
-                <span className="font-semibold text-gray-900 dark:text-white">
+                <span className="font-semibold text-slate-900">
                   {item.count}
                 </span>
               </div>
@@ -136,18 +132,18 @@ function Dashboard() {
         </div>
 
         <div className="card">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">
             По статусу
           </h2>
           <div className="space-y-3">
             {stats.byStatus.map((item) => (
               <div key={item.status} className="flex items-center justify-between">
-                <span className="text-gray-700 dark:text-gray-300">
+                <span className="text-slate-700">
                   {item.status === 'PENDING' && 'Ожидает'}
                   {item.status === 'ACTIVE' && 'Активна'}
                   {item.status === 'COMPLETED' && 'Завершена'}
                 </span>
-                <span className="font-semibold text-gray-900 dark:text-white">
+                <span className="font-semibold text-slate-900">
                   {item.count}
                 </span>
               </div>
@@ -158,7 +154,7 @@ function Dashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">
             Ближайшие начала практики
           </h2>
           {stats.upcomingStarts.length > 0 ? (
@@ -166,22 +162,22 @@ function Dashboard() {
               {stats.upcomingStarts.map((student) => (
                 <div
                   key={student.id}
-                  className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+                  className="p-3 bg-slate-50 rounded-xl border border-slate-100"
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <Link
                         to={`/students/${student.id}`}
-                        className="font-medium text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400"
+                        className="font-medium text-slate-900 hover:text-primary-600"
                       >
                         {getFullName(student)}
                       </Link>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <p className="text-sm text-slate-500">
                         {student.institution?.name} • {practiceTypeLabels[student.practiceType]}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      <p className="text-sm font-medium text-slate-900">
                         {format(new Date(student.startDate), 'd MMM', { locale: ru })}
                       </p>
                     </div>
@@ -190,12 +186,12 @@ function Dashboard() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500 dark:text-gray-400">Нет предстоящих начал</p>
+            <p className="text-slate-500">Нет предстоящих начал</p>
           )}
         </div>
 
         <div className="card">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+          <h2 className="text-xl font-semibold text-slate-900 mb-4">
             Ближайшие окончания практики
           </h2>
           {stats.upcomingEnds.length > 0 ? (
@@ -203,22 +199,22 @@ function Dashboard() {
               {stats.upcomingEnds.map((student) => (
                 <div
                   key={student.id}
-                  className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg"
+                  className="p-3 bg-slate-50 rounded-xl border border-slate-100"
                 >
                   <div className="flex items-center justify-between">
                     <div>
                       <Link
                         to={`/students/${student.id}`}
-                        className="font-medium text-gray-900 dark:text-white hover:text-primary-600 dark:hover:text-primary-400"
+                        className="font-medium text-slate-900 hover:text-primary-600"
                       >
                         {getFullName(student)}
                       </Link>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                      <p className="text-sm text-slate-500">
                         {student.institution?.name} • {practiceTypeLabels[student.practiceType]}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900 dark:text-white">
+                      <p className="text-sm font-medium text-slate-900">
                         {format(new Date(student.endDate), 'd MMM', { locale: ru })}
                       </p>
                     </div>
@@ -227,22 +223,16 @@ function Dashboard() {
               ))}
             </div>
           ) : (
-            <p className="text-gray-500 dark:text-gray-400">Нет предстоящих окончаний</p>
+            <p className="text-slate-500">Нет предстоящих окончаний</p>
           )}
         </div>
       </div>
 
       <div className="card">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+        <h2 className="text-xl font-semibold text-slate-900 mb-4">
           Быстрые действия
         </h2>
         <div className="flex flex-wrap gap-4">
-          <Link
-            to="/students/new"
-            className="btn btn-primary"
-          >
-            Добавить практиканта
-          </Link>
           <Link
             to="/institutions"
             className="btn btn-secondary"

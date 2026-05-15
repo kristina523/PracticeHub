@@ -20,33 +20,38 @@ function TeacherCourseChat() {
   const messagesEndRef = useRef(null);
   const intervalRef = useRef(null);
 
+  // Курс и список студентов — грузим один раз при смене курса
   useEffect(() => {
     fetchCourseAndEnrollments();
-    
-    // Обновляем сообщения каждые 3 секунды, если выбран чат
-    if (selectedEnrollment) {
-      intervalRef.current = setInterval(() => {
-        fetchMessages(selectedEnrollment.id);
-      }, 3000);
-    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseId]);
 
+  // Открываем чат по enrollmentId из URL
+  useEffect(() => {
+    if (!enrollmentId || enrollments.length === 0) return;
+    if (selectedEnrollment?.id === enrollmentId) return;
+    const enrollment = enrollments.find((e) => e.id === enrollmentId);
+    if (enrollment) {
+      setSelectedEnrollment(enrollment);
+      fetchMessages(enrollment.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrollmentId, enrollments]);
+
+  // Поллинг сообщений только для текущего чата, без перезагрузки списка студентов
+  useEffect(() => {
+    if (!selectedEnrollment?.id) return;
+    const id = selectedEnrollment.id;
+    intervalRef.current = setInterval(() => {
+      fetchMessages(id);
+    }, 3000);
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-  }, [courseId, selectedEnrollment]);
-
-  // Если передан enrollmentId, открываем этот чат
-  useEffect(() => {
-    if (enrollmentId && enrollments.length > 0) {
-      const enrollment = enrollments.find(e => e.id === enrollmentId);
-      if (enrollment) {
-        setSelectedEnrollment(enrollment);
-        fetchMessages(enrollment.id);
-      }
-    }
-  }, [enrollmentId, enrollments]);
+  }, [selectedEnrollment?.id]);
 
   useEffect(() => {
     scrollToBottom();
@@ -86,22 +91,30 @@ function TeacherCourseChat() {
 
   const fetchMessages = async (enrollmentId) => {
     if (!enrollmentId) return;
-    
+
     try {
       const response = await api.get(`/course-chat/enrollment/${enrollmentId}`);
-      setMessages(response.data.messages || []);
-      
-      // Отмечаем сообщения как прочитанные
-      await api.patch(`/course-chat/enrollment/${enrollmentId}/read`);
+      const next = response.data.messages || [];
+      setMessages((prev) => {
+        if (prev.length === next.length && prev[prev.length - 1]?.id === next[next.length - 1]?.id) {
+          return prev;
+        }
+        return next;
+      });
+      api
+        .patch(`/course-chat/enrollment/${enrollmentId}/read`)
+        .catch(() => {});
     } catch (error) {
       console.error('Ошибка загрузки сообщений:', error);
     }
   };
 
-  const handleSelectEnrollment = async (enrollment) => {
+  const handleSelectEnrollment = (enrollment) => {
+    if (selectedEnrollment?.id === enrollment.id) return;
     setSelectedEnrollment(enrollment);
-    navigate(`/teacher/courses/${courseId}/chat/${enrollment.id}`);
-    await fetchMessages(enrollment.id);
+    setMessages([]);
+    navigate(`/teacher/courses/${courseId}/chat/${enrollment.id}`, { replace: true });
+    fetchMessages(enrollment.id);
   };
 
   const handleSendMessage = async (e) => {

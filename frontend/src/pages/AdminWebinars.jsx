@@ -3,6 +3,7 @@ import api from '../utils/api';
 import { Loader2, Plus, Edit, Trash2, Calendar, Users, ExternalLink, X } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { confirmDialog } from '../components/Toast';
 
 function AdminWebinars() {
   const [webinars, setWebinars] = useState([]);
@@ -84,7 +85,14 @@ function AdminWebinars() {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Вы уверены, что хотите удалить этот вебинар?')) return;
+    if (
+      !(await confirmDialog('Вы уверены, что хотите удалить этот вебинар?', {
+        title: 'Удалить вебинар?',
+        confirmText: 'Удалить',
+        variant: 'danger'
+      }))
+    )
+      return;
 
     try {
       await api.delete(`/webinars/${id}`);

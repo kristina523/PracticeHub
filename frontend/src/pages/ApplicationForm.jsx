@@ -29,6 +29,12 @@ function ApplicationForm() {
     fetchMyApplications();
   }, []);
 
+  useEffect(() => {
+    if (user?.email) {
+      setFormData((prev) => (prev.email ? prev : { ...prev, email: user.email }));
+    }
+  }, [user?.email]);
+
   const fetchMyApplications = async () => {
     try {
       const response = await api.get('/applications/my');
@@ -214,7 +220,7 @@ function ApplicationForm() {
                   name="course"
                   type="number"
                   min="1"
-                  max="10"
+                  max="4"
                   value={formData.course}
                   onChange={handleChange}
                   className="input"
@@ -225,7 +231,7 @@ function ApplicationForm() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Email
+                    Email <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="email"
@@ -234,13 +240,13 @@ function ApplicationForm() {
                     value={formData.email}
                     onChange={handleChange}
                     className="input"
-                    placeholder={user?.email || ''}
+                    required
                   />
                 </div>
 
                 <div>
                   <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Телефон
+                    Телефон <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="phone"
@@ -249,6 +255,7 @@ function ApplicationForm() {
                     value={formData.phone}
                     onChange={handleChange}
                     className="input"
+                    required
                   />
                 </div>
               </div>

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import api from '../utils/api';
+import api, { setBearerTokenGetter } from '../utils/api';
 
 export const useAuthStore = create(
   persist(
@@ -12,27 +12,21 @@ export const useAuthStore = create(
 
       login: async (username, password, role = null) => {
         try {
-          const response = await api.post('/auth/login', { username, password, role });
+          const payload = { username, password };
+          if (role) payload.role = role;
+          const response = await api.post('/auth/login', payload);
           const { token, user } = response.data;
-          
-          console.log('Login response:', { token: !!token, user, role: user?.role });
-          
-          set({ 
-            token, 
-            user, 
+
+          set({
+            token,
+            user,
             role: user?.role || null,
-            isAuthenticated: true 
+            isAuthenticated: true
           });
-          
+
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          
-          console.log('Auth state after login:', { 
-            isAuthenticated: true, 
-            role: user?.role,
-            userId: user?.id 
-          });
-          
-          return { success: true };
+
+          return { success: true, user };
         } catch (error) {
           console.error('Login error:', error);
           console.error('Error details:', {
@@ -40,9 +34,23 @@ export const useAuthStore = create(
             data: error.response?.data,
             message: error.message
           });
+          if (!error.response) {
+            return {
+              success: false,
+              message:
+                'Нет ответа от API. Убедитесь, что запущены бэкенд (порт 3001) и фронт: в папке frontend выполните npm run dev.'
+            };
+          }
+          const data = error.response?.data || {};
+          if (Array.isArray(data.errors) && data.errors.length) {
+            return {
+              success: false,
+              message: data.errors.map((e) => e.msg || e.message).join(', ')
+            };
+          }
           return {
             success: false,
-            message: error.response?.data?.message || error.response?.data?.error || 'Ошибка при входе'
+            message: data.message || data.error || 'Неверное имя пользователя или пароль'
           };
         }
       },
@@ -175,18 +183,33 @@ export const useAuthStore = create(
           api.defaults.headers.common['Authorization'] = `Bearer ${state.token}`;
           state.checkAuth();
         }
+      },
+
+      updateCurrentUser: (userData) => {
+        const currentState = get();
+        const mergedUser = { ...(currentState.user || {}), ...userData };
+        set({
+          user: mergedUser,
+          role: mergedUser?.role || currentState.role || null
+        });
       }
     }),
     {
       name: 'auth-storage',
-      partialize: (state) => ({ token: state.token, user: state.user, role: state.role }),
+      partialize: (state) => ({
+        token: state.token,
+        user: state.user,
+        role: state.role,
+        isAuthenticated: Boolean(state.token)
+      }),
       onRehydrateStorage: () => (state) => {
         if (state?.token) {
           api.defaults.headers.common['Authorization'] = `Bearer ${state.token}`;
-          state.isAuthenticated = !!state.token;
+          state.isAuthenticated = true;
         }
       }
     }
   )
 );
 
+setBearerTokenGetter(() => useAuthStore.getState().token);

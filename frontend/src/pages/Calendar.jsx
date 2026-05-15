@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Calendar as BigCalendar, momentLocalizer } from 'react-big-calendar';
 import moment from 'moment';
 import 'moment/locale/ru';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import api from '../utils/api';
 import { Loader2 } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 
 
@@ -32,6 +32,7 @@ const practiceTypeLabels = {
 
 function Calendar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const isStudentCalendar = location.pathname.startsWith('/student');
   const [students, setStudents] = useState([]);
@@ -44,20 +45,6 @@ function Calendar() {
     institutionId: ''
   });
   const [institutions, setInstitutions] = useState([]);
-
-  useEffect(() => {
-    if (!isStudentCalendar) {
-      fetchInstitutions();
-    }
-  }, [isStudentCalendar]);
-
-  useEffect(() => {
-    if (isStudentCalendar) {
-      fetchStudentData();
-    } else {
-      fetchStudents();
-    }
-  }, [filters, isStudentCalendar]);
 
   const fetchInstitutions = async () => {
     try {
@@ -87,18 +74,23 @@ function Calendar() {
     }
   };
 
-  const fetchStudentData = async () => {
+  const fetchStudentData = useCallback(async () => {
     setLoading(true);
     try {
       const [studentRes, tasksRes, webinarsRes] = await Promise.all([
         api.get('/students', { params: { limit: 1000, userOnly: true } }),
         api.get('/tasks', { params: { page: 1, limit: 1000 } }),
-        api.get('/webinars', { params: { upcoming: 'true' } }).catch(() => ({ data: { webinars: [] } }))
+        // Загружаем все вебинары (не только предстоящие), чтобы показать все зарегистрированные
+        api.get('/webinars').catch(() => ({ data: { webinars: [] } }))
       ]);
 
       const studentsData = studentRes.data.students || studentRes.data || [];
       const tasksData = tasksRes.data.tasks || tasksRes.data || [];
       const webinarsData = webinarsRes.data?.webinars || [];
+      
+      // Отладочная информация для вебинаров
+      console.log('Загруженные вебинары для календаря:', webinarsData);
+      console.log('Вебинары с isRegistered:', webinarsData.filter(w => w.isRegistered === true));
       
       setStudents(Array.isArray(studentsData) ? studentsData : []);
       setTasks(Array.isArray(tasksData) ? tasksData : []);
@@ -111,10 +103,78 @@ function Calendar() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!isStudentCalendar) {
+      fetchInstitutions();
+    }
+  }, [isStudentCalendar]);
+
+  useEffect(() => {
+    if (isStudentCalendar) {
+      fetchStudentData();
+    } else {
+      fetchStudents();
+    }
+  }, [filters, isStudentCalendar, fetchStudentData]);
+
+  // Обновляем календарь при фокусе на окне (когда пользователь возвращается на страницу)
+  useEffect(() => {
+    if (!isStudentCalendar) return;
+
+    const handleFocus = () => {
+      fetchStudentData();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [isStudentCalendar, fetchStudentData]);
+
+  // Обновляем календарь при изменении storage (для синхронизации между вкладками)
+  useEffect(() => {
+    if (!isStudentCalendar) return;
+
+    const handleStorageChange = (e) => {
+      if (e.key === 'webinarRegistrationChanged') {
+        fetchStudentData();
+        localStorage.removeItem('webinarRegistrationChanged');
+      }
+    };
+
+    // Обработчик для событий на этой же вкладке
+    const handleCustomStorage = () => {
+      fetchStudentData();
+      localStorage.removeItem('webinarRegistrationChanged');
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('webinarRegistrationChanged', handleCustomStorage);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('webinarRegistrationChanged', handleCustomStorage);
+    };
+  }, [isStudentCalendar, fetchStudentData]);
 
   const practiceEvents = students
-    .filter(student => student.startDate && student.endDate)
+    .filter(student => {
+      // Исключаем виртуальные записи (id начинается с 'user_')
+      if (!student.id || (typeof student.id === 'string' && student.id.startsWith('user_'))) {
+        return false;
+      }
+      // Исключаем записи без дат
+      if (!student.startDate || !student.endDate) {
+        return false;
+      }
+      // Исключаем записи без ФИО (должны быть lastName и firstName)
+      if (!student.lastName || !student.firstName) {
+        return false;
+      }
+      return true;
+    })
     .map(student => {
       const fullName = getFullName(student);
       const shortName = `${student.lastName} ${student.firstName?.charAt(0) || ''}.${student.middleName ? student.middleName.charAt(0) + '.' : ''}`;
@@ -146,17 +206,45 @@ function Calendar() {
     }));
 
   const webinarEvents = webinars
-    .filter(webinar => webinar.startTime && webinar.endTime)
-    .map(webinar => ({
-      id: webinar.id,
-      title: webinar.title || 'Вебинар',
-      start: new Date(webinar.startTime),
-      end: new Date(webinar.endTime),
-      resource: {
-        type: 'WEBINAR',
-        isRegistered: webinar.isRegistered || false
+    .filter(webinar => {
+      // Проверяем наличие дат
+      if (!webinar.startTime || !webinar.endTime) {
+        return false;
       }
-    }));
+      
+      // Для студента показываем только зарегистрированные вебинары
+      if (isStudentCalendar) {
+        // Проверяем isRegistered более гибко (может быть true, false, undefined, null)
+        const isRegistered = webinar.isRegistered === true || webinar.isRegistered === 'true';
+        
+        // Отладочная информация
+        if (!isRegistered) {
+          console.log('Вебинар отфильтрован (не зарегистрирован):', webinar.title, 'isRegistered:', webinar.isRegistered, 'type:', typeof webinar.isRegistered);
+        } else {
+          console.log('Вебинар будет показан (зарегистрирован):', webinar.title, 'isRegistered:', webinar.isRegistered);
+        }
+        
+        return isRegistered;
+      }
+      
+      // Для администратора/преподавателя показываем все вебинары
+      return true;
+    })
+    .map(webinar => {
+      console.log('Создаем событие для вебинара:', webinar.title, 'isRegistered:', webinar.isRegistered);
+      return {
+        id: webinar.id,
+        title: webinar.title || 'Вебинар',
+        start: new Date(webinar.startTime),
+        end: new Date(webinar.endTime),
+        resource: {
+          type: 'WEBINAR',
+          isRegistered: webinar.isRegistered || false
+        }
+      };
+    });
+  
+  console.log('Всего вебинаров в календаре:', webinarEvents.length, 'из', webinars.length, 'загруженных');
 
   const events = isStudentCalendar ? [...practiceEvents, ...taskEvents, ...webinarEvents] : practiceEvents;
 
@@ -361,20 +449,36 @@ function Calendar() {
               }
             }}
             onSelectEvent={(event) => {
-              const isTaskEvent = event.resource.type === 'TASK';
-              const isWebinarEvent = event.resource.type === 'WEBINAR';
+              const isTaskEvent = event.resource?.type === 'TASK';
+              const isWebinarEvent = event.resource?.type === 'WEBINAR';
+              const isStudentEvent = event.resource?.student && !isTaskEvent && !isWebinarEvent;
 
               if (isTaskEvent) {
                 if (isStudentCalendar) {
-                  window.location.href = `/student/tasks/${event.id}`;
+                  navigate(`/student/tasks/${event.id}`);
                 }
-              } else if (isWebinarEvent) {
+                return;
+              }
+              
+              if (isWebinarEvent) {
                 if (isStudentCalendar) {
-                  window.location.href = `/student/webinars`;
+                  navigate(`/student/webinars`);
                 }
-              } else if (!isStudentCalendar) {
+                return;
+              }
+              
+              if (isStudentEvent && !isStudentCalendar) {
                 // Для администратора/преподавателя открываем карточку студента
-                window.location.href = `/students/${event.resource.student.id}`;
+                const studentId = event.resource.student?.id;
+                
+                if (studentId) {
+                  // Определяем правильный путь в зависимости от роли
+                  const path = user?.role === 'teacher' 
+                    ? `/teacher/students/${studentId}`
+                    : `/students/${studentId}`;
+                  navigate(path);
+                }
+                return;
               }
             }}
           />

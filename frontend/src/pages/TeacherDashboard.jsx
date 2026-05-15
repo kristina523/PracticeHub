@@ -23,9 +23,11 @@ import { ru } from 'date-fns/locale';
 
 const getFullName = (student) => {
   if (!student) return 'Не указано';
-  const parts = [student.lastName, student.firstName];
-  if (student.middleName) parts.push(student.middleName);
-  return parts.join(' ');
+  const parts = [student.lastName, student.firstName, student.middleName].filter((p) => {
+    const s = p != null ? String(p).trim() : '';
+    return s !== '' && s !== 'Уточнить';
+  });
+  return parts.length ? parts.join(' ') : '—';
 };
 
 const practiceTypeLabels = {

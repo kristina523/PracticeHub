@@ -1,5 +1,6 @@
 import { useAuthStore } from '../store/authStore';
-import { LogOut, Plus, Grid3x3, User } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 function Header() {
   const { user, logout } = useAuthStore();
@@ -17,43 +18,50 @@ function Header() {
     return 'Студент';
   };
 
+  const getProfilePath = () => {
+    if (user?.role === 'teacher') return '/teacher/profile';
+    if (user?.role === 'student') return '/student/profile';
+    return '/profile';
+  };
+
   return (
-    <header className="bg-white border-b border-gray-200 h-16 flex items-center px-4 shadow-sm">
-      <div className="flex items-center gap-4 flex-1">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-            <span className="text-white font-bold text-sm">P</span>
+    <header className="sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur-md h-[76px]">
+      <div className="max-w-[1700px] mx-auto h-full px-4 md:px-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-sky-400 rounded-xl flex items-center justify-center shadow-sm">
+            <span className="text-white font-bold text-sm">PH</span>
           </div>
-          <span className="text-xl font-medium text-gray-900">Класс</span>
+          <div>
+            <p className="text-lg font-semibold text-slate-900 leading-none">PracticeHub</p>
+            <p className="text-xs text-slate-500 mt-1">Система управления практикой</p>
+          </div>
         </div>
-      </div>
-      
-      <div className="flex items-center gap-2">
-        <button className="p-2 rounded-full hover:bg-gray-100 transition-colors">
-          <Plus className="w-5 h-5 text-gray-600" />
-        </button>
-        <button className="p-2 rounded-full hover:bg-gray-100 transition-colors">
-          <Grid3x3 className="w-5 h-5 text-gray-600" />
-        </button>
-        {user && (
-          <>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer">
-              <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center">
-                <User className="w-5 h-5 text-white" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-medium text-gray-900">{getUserDisplayName()}</p>
-                <p className="text-xs text-gray-500">{getRoleLabel()}</p>
-              </div>
-            </div>
-            <button
-              onClick={logout}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              Выход
-            </button>
-          </>
-        )}
+
+        <div className="flex items-center gap-2">
+          {user && (
+            <>
+              <Link
+                to={getProfilePath()}
+                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+              >
+                <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-500 rounded-lg flex items-center justify-center shadow-sm">
+                  <User className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-semibold text-slate-900 leading-tight">{getUserDisplayName()}</p>
+                  <p className="text-xs text-slate-500">{getRoleLabel()}</p>
+                </div>
+              </Link>
+              <button
+                onClick={logout}
+                className="inline-flex items-center gap-1 px-3 py-2 text-sm font-medium text-slate-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+                Выход
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </header>
   );

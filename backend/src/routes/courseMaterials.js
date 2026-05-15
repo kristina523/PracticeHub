@@ -6,6 +6,40 @@ import { authenticateToken } from '../middleware/auth.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/**
+ * @swagger
+ * /api/course-materials/course/{courseId}:
+ *   get:
+ *     summary: Получить все материалы курса
+ *     tags: [Course Materials]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: courseId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID курса
+ *     responses:
+ *       200:
+ *         description: Список материалов курса
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 materials:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       403:
+ *         description: Доступ запрещен
+ *       404:
+ *         description: Курс не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить все материалы курса
 router.get('/course/:courseId', authenticateToken, async (req, res) => {
   try {
@@ -48,6 +82,31 @@ router.get('/course/:courseId', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/course-materials/{id}:
+ *   get:
+ *     summary: Получить материал по ID
+ *     tags: [Course Materials]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID материала
+ *     responses:
+ *       200:
+ *         description: Информация о материале
+ *       403:
+ *         description: Доступ запрещен
+ *       404:
+ *         description: Материал не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить конкретный материал
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -86,6 +145,57 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/course-materials:
+ *   post:
+ *     summary: Создать материал курса
+ *     tags: [Course Materials]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - courseId
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 example: "Лекция 1: Введение"
+ *               description:
+ *                 type: string
+ *               content:
+ *                 type: string
+ *                 description: Текстовое содержимое
+ *               fileUrl:
+ *                 type: string
+ *                 format: uri
+ *                 description: URL файла
+ *               materialType:
+ *                 type: string
+ *                 enum: [TEXT, VIDEO, PDF, LINK, FILE]
+ *                 default: TEXT
+ *               order:
+ *                 type: integer
+ *                 description: Порядок отображения
+ *               courseId:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Материал создан
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей)
+ *       404:
+ *         description: Курс не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Создать материал (только преподаватель)
 router.post('/',
   authenticateToken,
@@ -157,6 +267,53 @@ router.post('/',
   }
 );
 
+/**
+ * @swagger
+ * /api/course-materials/{id}:
+ *   put:
+ *     summary: Обновить материал курса
+ *     tags: [Course Materials]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID материала
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               content:
+ *                 type: string
+ *               fileUrl:
+ *                 type: string
+ *                 format: uri
+ *               materialType:
+ *                 type: string
+ *                 enum: [TEXT, VIDEO, PDF, LINK, FILE]
+ *               order:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Материал обновлен
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей)
+ *       404:
+ *         description: Материал не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Обновить материал
 router.put('/:id',
   authenticateToken,
@@ -220,6 +377,31 @@ router.put('/:id',
   }
 );
 
+/**
+ * @swagger
+ * /api/course-materials/{id}:
+ *   delete:
+ *     summary: Удалить материал курса
+ *     tags: [Course Materials]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID материала
+ *     responses:
+ *       200:
+ *         description: Материал удален
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей)
+ *       404:
+ *         description: Материал не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Удалить материал
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {

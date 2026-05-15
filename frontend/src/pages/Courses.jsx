@@ -5,6 +5,7 @@ import { Plus, Search, Loader2, Edit, Trash2, Eye, BookOpen, Code, Globe, Smartp
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useAuthStore } from '../store/authStore';
+import { confirmDialog } from '../components/Toast';
 
 const directionIcons = {
   'Программирование': Code,
@@ -104,7 +105,13 @@ function Courses() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Вы уверены, что хотите удалить этот курс?')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите удалить этот курс?', {
+        title: 'Удалить курс?',
+        confirmText: 'Удалить',
+        variant: 'danger'
+      }))
+    ) {
       return;
     }
 
@@ -150,17 +157,17 @@ function Courses() {
     <div className="space-y-6">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-4xl font-extrabold bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+          <h1 className="page-title mb-2">
             {isTeacher ? 'Мои курсы' : 'Все курсы'}
           </h1>
-          <p className="text-lg text-gray-600 dark:text-gray-400">
+          <p className="page-subtitle">
             {isTeacher ? 'Управление курсами' : 'Просмотр всех курсов системы'}
           </p>
         </div>
         {canManageCourses && (
           <button
             onClick={() => setShowCreateModal(true)}
-            className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl font-semibold text-white hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+            className="btn btn-primary"
           >
             <Plus className="w-5 h-5" />
             Создать курс
@@ -169,22 +176,22 @@ function Courses() {
       </div>
 
       {/* Фильтры и поиск */}
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6">
+      <div className="card">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               type="text"
               placeholder="Поиск по названию или описанию..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-800 dark:text-white transition-all"
+              className="input pl-12"
             />
           </div>
           <select
             value={filterDirection}
             onChange={(e) => setFilterDirection(e.target.value)}
-            className="w-full px-4 py-3 border-2 border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-800 dark:text-white transition-all"
+            className="input"
           >
             <option value="">Все направления</option>
             {directions.map(dir => (
@@ -200,17 +207,17 @@ function Courses() {
           <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
         </div>
       ) : filteredCourses.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 text-center py-16">
-          <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/30 dark:to-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-            <BookOpen className="w-12 h-12 text-indigo-600 dark:text-indigo-400" />
+        <div className="card text-center py-16">
+          <div className="w-24 h-24 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <BookOpen className="w-12 h-12 text-indigo-600" />
           </div>
-          <p className="text-gray-600 dark:text-gray-400 text-xl font-semibold mb-2">
+          <p className="text-slate-600 text-xl font-semibold mb-2">
             {search || filterDirection ? 'Курсы не найдены' : 'У вас пока нет курсов'}
           </p>
           {canManageCourses && !search && !filterDirection && (
             <button
               onClick={() => setShowCreateModal(true)}
-              className="mt-6 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl font-semibold text-white hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+              className="btn btn-primary mt-6"
             >
               Создать первый курс
             </button>
@@ -316,7 +323,7 @@ function Courses() {
             return (
               <div
                 key={course.id}
-                className="group relative bg-white dark:bg-gray-800 rounded-2xl shadow-lg hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-2 overflow-hidden border border-gray-100 dark:border-gray-700"
+                className="group relative bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 overflow-hidden border border-slate-200"
               >
                 {isClickable ? (
                   <Link to={`/teacher/courses/${course.id}`} className="block">
@@ -336,7 +343,7 @@ function Courses() {
       {/* Модальное окно создания/редактирования */}
       {(showCreateModal || editingCourse) && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-200 dark:border-gray-700">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200">
             <div className="p-8">
               <div className="mb-6">
                 <h2 className="text-3xl font-extrabold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent mb-2">
@@ -348,7 +355,7 @@ function Courses() {
               </div>
               <form onSubmit={editingCourse ? handleUpdate : handleCreate} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Название курса *
                   </label>
                   <input
@@ -361,7 +368,7 @@ function Courses() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Направление *
                   </label>
                   <select
@@ -376,7 +383,7 @@ function Courses() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Описание
                   </label>
                   <textarea
@@ -388,7 +395,7 @@ function Courses() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Изображение курса
                   </label>
                   <input
@@ -417,17 +424,17 @@ function Courses() {
                     </div>
                   )}
                 </div>
-                <div className="flex justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <div className="flex justify-end gap-3 pt-6 border-t border-slate-200">
                   <button
                     type="button"
                     onClick={closeModal}
-                    className="px-6 py-2.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl font-semibold hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    className="btn btn-secondary"
                   >
                     Отмена
                   </button>
                   <button
                     type="submit"
-                    className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl font-semibold hover:from-indigo-700 hover:to-purple-700 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+                    className="btn btn-primary"
                   >
                     {editingCourse ? 'Сохранить' : 'Создать'}
                   </button>

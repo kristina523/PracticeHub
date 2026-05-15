@@ -5,6 +5,37 @@ import { authenticateToken } from '../middleware/auth.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/**
+ * @swagger
+ * /api/teachers:
+ *   get:
+ *     summary: Получить список преподавателей
+ *     tags: [Teachers]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Поиск по имени пользователя, email, имени или фамилии
+ *     responses:
+ *       200:
+ *         description: Список преподавателей
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 teachers:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       403:
+ *         description: Доступ запрещен (только для админов)
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить всех преподавателей (только для админа)
 router.get('/', authenticateToken, async (req, res) => {
   try {

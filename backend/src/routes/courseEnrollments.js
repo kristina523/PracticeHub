@@ -2,11 +2,39 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
+import {
+  notifyCourseEnrollmentStatusChange,
+  notifyTeacherAboutNewCourseEnrollment
+} from '../bot/telegramBot.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Получить все курсы с информацией о статусе записи для текущего студента
+/**
+ * @swagger
+ * /api/course-enrollments:
+ *   get:
+ *     summary: Получить список курсов для студента
+ *     tags: [Course Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Список курсов с информацией о записи
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 courses:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       403:
+ *         description: Доступ запрещен (только для студентов)
+ *       401:
+ *         description: Не авторизован
+ */
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const user = req.user;
@@ -69,6 +97,43 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/course-enrollments/{courseId}:
+ *   post:
+ *     summary: Подать заявку на курс
+ *     tags: [Course Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: courseId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID курса
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 maxLength: 1000
+ *                 description: Сообщение преподавателю
+ *     responses:
+ *       201:
+ *         description: Заявка на курс отправлена
+ *       400:
+ *         description: Заявка уже подана или одобрена
+ *       403:
+ *         description: Доступ запрещен (только для студентов)
+ *       404:
+ *         description: Курс не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Подать заявку на курс (или повторно, если был REJECTED)
 router.post(
   '/:courseId',
@@ -138,6 +203,10 @@ router.post(
         return res.status(400).json({ message: 'Заявка уже подана или одобрена' });
       }
 
+      notifyTeacherAboutNewCourseEnrollment(enrollment.id).catch((err) => {
+        console.error('Не удалось уведомить преподавателя о новой заявке на курс:', err);
+      });
+
       res.status(201).json({ message: 'Заявка на курс отправлена', enrollment });
     } catch (error) {
       console.error('Ошибка подачи заявки на курс:', error);
@@ -146,6 +215,30 @@ router.post(
   },
 );
 
+/**
+ * @swagger
+ * /api/course-enrollments/teacher/pending:
+ *   get:
+ *     summary: Получить заявки на курсы преподавателя
+ *     tags: [Course Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Список заявок на курсы
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей)
+ *       404:
+ *         description: Преподаватель не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Преподаватель: получить заявки на свои курсы
 router.get('/teacher/pending', authenticateToken, async (req, res) => {
   try {
@@ -186,6 +279,45 @@ router.get('/teacher/pending', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/course-enrollments/{enrollmentId}:
+ *   patch:
+ *     summary: Одобрить или отклонить заявку на курс
+ *     tags: [Course Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: enrollmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID заявки на курс
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [APPROVED, REJECTED]
+ *     responses:
+ *       200:
+ *         description: Статус заявки обновлен
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей)
+ *       404:
+ *         description: Заявка не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 // Преподаватель: одобрить или отклонить заявку
 router.patch(
   '/:enrollmentId',
@@ -236,6 +368,10 @@ router.patch(
         data: {
           status,
         },
+      });
+
+      notifyCourseEnrollmentStatusChange(updated.id, status).catch((err) => {
+        console.error('Не удалось уведомить студента о смене статуса заявки на курс:', err);
       });
 
       res.json({ message: 'Статус заявки обновлен', enrollment: updated });

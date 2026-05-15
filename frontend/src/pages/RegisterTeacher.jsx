@@ -264,11 +264,18 @@ function RegisterTeacher() {
               </p>
             )}
 
-            <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-              Уже есть аккаунт?{' '}
-              <Link to="/login" className="text-primary-600 dark:text-primary-400 hover:underline">
-                Войти
-              </Link>
+            <div className="text-center text-sm text-gray-600 dark:text-gray-400 space-y-1">
+              <div>
+                Уже есть аккаунт?{' '}
+                <Link to="/login" className="text-primary-600 dark:text-primary-400 hover:underline">
+                  Войти
+                </Link>
+              </div>
+              <div>
+                <Link to="/register/student" className="text-primary-600 dark:text-primary-400 hover:underline">
+                  Регистрация студента
+                </Link>
+              </div>
             </div>
           </form>
         </div>

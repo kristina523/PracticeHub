@@ -1,47 +1,21 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { GraduationCap } from 'lucide-react';
-import api from '../utils/api';
 
 function RegisterStudent() {
   const [formData, setFormData] = useState({
     username: '',
     email: '',
     password: '',
-    confirmPassword: '',
-    studentId: ''
+    confirmPassword: ''
   });
-  const [students, setStudents] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [loadingStudents, setLoadingStudents] = useState(false);
   const [consent, setConsent] = useState(false);
   
   const { registerStudent } = useAuthStore();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    // Пытаемся загрузить студентов, но не критично, если не получится
-    fetchStudents().catch(() => {
-      // Игнорируем ошибку - поле studentId опционально
-    });
-  }, []);
-
-  const fetchStudents = async () => {
-    setLoadingStudents(true);
-    try {
-      const response = await api.get('/students');
-      const studentsList = response.data.students || response.data || [];
-      setStudents(studentsList);
-    } catch (error) {
-      // Если не удалось загрузить (например, нет авторизации), просто не показываем список
-      console.log('Список студентов недоступен (требуется авторизация)');
-      setStudents([]);
-    } finally {
-      setLoadingStudents(false);
-    }
-  };
 
   const handleChange = (e) => {
     setFormData({
@@ -88,23 +62,17 @@ function RegisterStudent() {
     setError('');
 
     try {
-      // Преобразуем пустую строку в null для studentId
-      const studentIdToSend = formData.studentId && formData.studentId.trim() !== '' 
-        ? formData.studentId.trim() 
-        : null;
-
       console.log('Отправка данных регистрации:', {
         username: formData.username.trim(),
         email: formData.email.trim(),
-        hasPassword: !!formData.password,
-        studentId: studentIdToSend
+        hasPassword: !!formData.password
       });
 
       const result = await registerStudent(
         formData.username.trim(),
         formData.email.trim(),
         formData.password,
-        studentIdToSend
+        null
       );
       
       console.log('Результат регистрации:', result);
@@ -114,8 +82,12 @@ function RegisterStudent() {
         setError(''); // Очищаем ошибки
         // Небольшая задержка перед редиректом
         setTimeout(() => {
-          navigate('/login', { 
-            state: { message: 'Студент успешно зарегистрирован! Теперь вы можете войти в систему.' } 
+          navigate('/login', {
+            state: {
+              message:
+                result?.data?.message ||
+                'Регистрация прошла успешно. Заявка на практику отправлена на рассмотрение; войти можно после одобрения администратором.'
+            }
           });
         }, 1000);
       } else {
@@ -129,12 +101,6 @@ function RegisterStudent() {
       setError(error.message || 'Произошла ошибка при регистрации. Попробуйте еще раз.');
       setLoading(false);
     }
-  };
-
-  const getStudentFullName = (student) => {
-    const parts = [student.lastName, student.firstName];
-    if (student.middleName) parts.push(student.middleName);
-    return parts.join(' ');
   };
 
   return (
@@ -159,30 +125,6 @@ function RegisterStudent() {
                 {error}
               </div>
             )}
-
-            <div>
-              <label htmlFor="studentId" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Выберите студента (необязательно)
-              </label>
-              <select
-                id="studentId"
-                name="studentId"
-                value={formData.studentId}
-                onChange={handleChange}
-                className="input"
-                disabled={loadingStudents}
-              >
-                <option value="">Не привязывать к студенту</option>
-                {students.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {getStudentFullName(student)} - {student.institutionName}
-                  </option>
-                ))}
-              </select>
-              {loadingStudents && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Загрузка студентов...</p>
-              )}
-            </div>
 
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -285,11 +227,18 @@ function RegisterStudent() {
               </p>
             )}
 
-            <div className="text-center text-sm text-gray-600 dark:text-gray-400">
-              Уже есть аккаунт?{' '}
-              <Link to="/login" className="text-primary-600 dark:text-primary-400 hover:underline">
-                Войти
-              </Link>
+            <div className="text-center text-sm text-gray-600 dark:text-gray-400 space-y-1">
+              <div>
+                Уже есть аккаунт?{' '}
+                <Link to="/login" className="text-primary-600 dark:text-primary-400 hover:underline">
+                  Войти
+                </Link>
+              </div>
+              <div>
+                <Link to="/register/teacher" className="text-primary-600 dark:text-primary-400 hover:underline">
+                  Регистрация преподавателя
+                </Link>
+              </div>
             </div>
           </form>
         </div>

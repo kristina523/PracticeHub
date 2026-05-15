@@ -150,28 +150,35 @@ function Notifications() {
           </div>
 
           <div>
-            <label className="label">Telegram ID (через запятую, необязательно)</label>
+            <label className="label">Получатели: chat_id или @username (через запятую)</label>
             <input
               type="text"
               className="input"
-              placeholder="Например: 12345, 67890"
+              placeholder="Например: 123456789, @ivanov, nika@maik.com"
               value={customIds}
               onChange={(e) => setCustomIds(e.target.value)}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Если указать фильтры и Telegram ID, рассылка пойдет всем уникальным получателям.
+              Поддерживаются: числовой Telegram chat_id, @username или email/логин студента, который уже
+              регистрировался в боте. Если указать фильтры и получателей, рассылка пойдёт всем уникальным.
             </p>
           </div>
 
           {error && (
-            <div className="text-red-600 dark:text-red-400 text-sm">
-              {error}
-            </div>
+            <div className="text-red-600 dark:text-red-400 text-sm">{error}</div>
           )}
 
           {result && (
-            <div className="text-green-600 dark:text-green-400 text-sm">
-              Успешно: {result.success} / {result.total}, ошибок: {result.failed}
+            <div className="space-y-1">
+              <div className="text-green-600 dark:text-green-400 text-sm">
+                Успешно: {result.success} / {result.total}, ошибок: {result.failed}
+              </div>
+              {Array.isArray(result.unresolved) && result.unresolved.length > 0 && (
+                <div className="text-amber-600 dark:text-amber-400 text-xs">
+                  Не удалось распознать: {result.unresolved.join(', ')}. Эти получатели либо не
+                  зарегистрировались в боте, либо введены неверно.
+                </div>
+              )}
             </div>
           )}
 

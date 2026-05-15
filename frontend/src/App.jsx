@@ -1,11 +1,13 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from './store/authStore';
+import { ToastProvider, ConfirmProvider } from './components/Toast';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import RegisterTeacher from './pages/RegisterTeacher';
-import RegisterAdmin from './pages/RegisterAdmin';
 import RegisterStudent from './pages/RegisterStudent';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import TeacherDashboard from './pages/TeacherDashboard';
 import StudentDashboard from './pages/StudentDashboard';
@@ -32,25 +34,58 @@ import Courses from './pages/Courses';
 import CourseDetail from './pages/CourseDetail';
 import CourseMaterials from './pages/CourseMaterials';
 import TeacherCourseChat from './pages/TeacherCourseChat';
+import TeacherChats from './pages/TeacherChats';
+import Profile from './pages/Profile';
 
 function PrivateRoute({ children, allowedRoles = null }) {
-  const { isAuthenticated, initAuth, user } = useAuthStore();
+  const token = useAuthStore((s) => s.token);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const [persistReady, setPersistReady] = useState(() => useAuthStore.persist.hasHydrated());
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   useEffect(() => {
-    initAuth();
-  }, [initAuth]);
+    const unsub = useAuthStore.persist.onFinishHydration(() => setPersistReady(true));
+    if (useAuthStore.persist.hasHydrated()) setPersistReady(true);
+    return unsub;
+  }, []);
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" />;
+  useEffect(() => {
+    if (!persistReady) return;
+    let cancelled = false;
+    (async () => {
+      const t = useAuthStore.getState().token;
+      if (!t) {
+        if (!cancelled) setSessionChecked(true);
+        return;
+      }
+      await useAuthStore.getState().checkAuth();
+      if (!cancelled) setSessionChecked(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [persistReady]);
+
+  if (!persistReady || !sessionChecked) {
+    return (
+      <div className="min-h-[40vh] flex items-center justify-center text-slate-500 text-sm">
+        Загрузка…
+      </div>
+    );
+  }
+
+  if (!token || !isAuthenticated) {
+    return <Navigate to="/login" replace />;
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
     if (user.role === 'teacher') {
-      return <Navigate to="/teacher" />;
+      return <Navigate to="/teacher" replace />;
     } else if (user.role === 'student') {
-      return <Navigate to="/student" />;
+      return <Navigate to="/student" replace />;
     } else {
-      return <Navigate to="/" />;
+      return <Navigate to="/" replace />;
     }
   }
 
@@ -59,11 +94,22 @@ function PrivateRoute({ children, allowedRoles = null }) {
 
 function App() {
   return (
+    <ToastProvider>
+      <ConfirmProvider>
+        <AppRoutes />
+      </ConfirmProvider>
+    </ToastProvider>
+  );
+}
+
+function AppRoutes() {
+  return (
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/register/teacher" element={<RegisterTeacher />} />
-      <Route path="/register/admin" element={<RegisterAdmin />} />
       <Route path="/register/student" element={<RegisterStudent />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       
       {/* Админские маршруты */}
       <Route
@@ -78,7 +124,6 @@ function App() {
         <Route path="students" element={<Students />} />
         <Route path="students/new" element={<StudentForm />} />
         <Route path="students/:id" element={<StudentDetail />} />
-        <Route path="students/:id/edit" element={<StudentForm />} />
         <Route path="teachers" element={<AdminTeachers />} />
         <Route path="practices" element={<AdminPractices />} />
         <Route path="webinars" element={<AdminWebinars />} />
@@ -88,6 +133,7 @@ function App() {
         <Route path="reports" element={<Reports />} />
         <Route path="applications" element={<Applications />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="profile" element={<Profile />} />
       </Route>
 
       {/* Маршруты преподавателя */}
@@ -111,6 +157,8 @@ function App() {
         <Route path="calendar" element={<Calendar />} />
         <Route path="applications" element={<Applications />} />
         <Route path="notifications" element={<Notifications />} />
+        <Route path="chats" element={<TeacherChats />} />
+        <Route path="profile" element={<Profile />} />
       </Route>
 
       {/* Маршруты студента */}
@@ -132,6 +180,7 @@ function App() {
         <Route path="calendar" element={<Calendar />} />
         <Route path="webinars" element={<StudentWebinars />} />
         <Route path="application" element={<ApplicationForm />} />
+        <Route path="profile" element={<Profile />} />
       </Route>
     </Routes>
   );

@@ -4,6 +4,7 @@ import api from '../utils/api';
 import { Plus, Edit, Trash2, Loader2, School, Users, X, Eye } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { confirmDialog } from '../components/Toast';
 
 
 const getFullName = (student) => {
@@ -73,7 +74,12 @@ function Institutions() {
       setFormData({ name: '', type: 'COLLEGE' });
       fetchInstitutions();
     } catch (error) {
-      alert('Ошибка: ' + (error.response?.data?.message || error.message));
+      const errorMessage = error.response?.data?.message || 
+                          error.response?.data?.errors?.[0]?.msg || 
+                          error.message || 
+                          'Произошла ошибка при сохранении';
+      alert('Ошибка: ' + errorMessage);
+      console.error('Ошибка сохранения учебного заведения:', error);
     }
   };
 
@@ -87,7 +93,13 @@ function Institutions() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Вы уверены, что хотите удалить это учебное заведение?')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите удалить это учебное заведение?', {
+        title: 'Удалить учебное заведение?',
+        confirmText: 'Удалить',
+        variant: 'danger'
+      }))
+    ) {
       return;
     }
 
@@ -95,7 +107,11 @@ function Institutions() {
       await api.delete(`/institutions/${id}`);
       fetchInstitutions();
     } catch (error) {
-      alert('Ошибка при удалении: ' + (error.response?.data?.message || error.message));
+      const errorMessage = error.response?.data?.message || 
+                          error.message || 
+                          'Произошла ошибка при удалении';
+      alert('Ошибка при удалении: ' + errorMessage);
+      console.error('Ошибка удаления учебного заведения:', error);
     }
   };
 

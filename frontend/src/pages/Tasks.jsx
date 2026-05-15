@@ -4,6 +4,7 @@ import { Plus, Search, Filter, Loader2, Eye, CheckCircle, XCircle, Clock, FileTe
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useAuthStore } from '../store/authStore';
+import { confirmDialog } from '../components/Toast';
 
 const statusLabels = {
   PENDING: 'Ожидает выполнения',
@@ -237,11 +238,19 @@ function Tasks() {
   const handleReviewSubmission = async (e) => {
     e.preventDefault();
     try {
-      await api.patch(`/tasks/${selectedSubmission.taskId}/submissions/${selectedSubmission.id}/review`, {
+      const taskId = selectedSubmission.taskId || selectedTask?.id;
+      if (!taskId) {
+        alert('Не удалось определить задание для проверки');
+        return;
+      }
+      const payload = {
         status: reviewForm.status,
-        reviewComment: reviewForm.reviewComment || null,
-        grade: reviewForm.grade ? parseInt(reviewForm.grade) : null
-      });
+        ...(reviewForm.reviewComment.trim()
+          ? { reviewComment: reviewForm.reviewComment.trim() }
+          : {}),
+        ...(reviewForm.grade ? { grade: parseInt(reviewForm.grade, 10) } : {})
+      };
+      await api.patch(`/tasks/${taskId}/submissions/${selectedSubmission.id}/review`, payload);
       setShowReviewModal(false);
       setSelectedSubmission(null);
       setReviewForm({
@@ -256,7 +265,8 @@ function Tasks() {
       await fetchTasks();
     } catch (error) {
       console.error('Ошибка проверки решения:', error);
-      alert(error.response?.data?.message || 'Ошибка проверки решения');
+      const validationMsg = error.response?.data?.errors?.[0]?.msg;
+      alert(validationMsg || error.response?.data?.message || 'Ошибка проверки решения');
     }
   };
 
@@ -264,7 +274,6 @@ function Tasks() {
     setSelectedTask(task);
     setShowSubmissionsModal(true);
     await fetchSubmissions(task.id);
-    // Обновляем список заданий, чтобы увидеть актуальное количество решений
     await fetchTasks();
   };
 
@@ -279,9 +288,16 @@ function Tasks() {
   };
 
   const handleDeleteTask = async (taskId, taskTitle) => {
-    const confirmMessage = `Вы уверены, что хотите удалить задание "${taskTitle}"?\n\nЭто действие нельзя отменить. Все решения этого задания также будут удалены.`;
-    
-    if (!window.confirm(confirmMessage)) {
+    if (
+      !(await confirmDialog(
+        `Это действие нельзя отменить. Все решения по заданию «${taskTitle}» также будут удалены.`,
+        {
+          title: 'Удалить задание?',
+          confirmText: 'Удалить',
+          variant: 'danger'
+        }
+      ))
+    ) {
       return;
     }
 

@@ -14,9 +14,9 @@ const schema = yup.object({
   practiceType: yup.string().oneOf(['EDUCATIONAL', 'PRODUCTION', 'INTERNSHIP']).required('Тип практики обязателен'),
   institutionId: yup.string(), 
   institutionName: yup.string().required('Название учебного заведения обязательно'),
-  course: yup.number().min(1).max(10).required('Курс обязателен'),
-  email: yup.string().email('Неверный email'),
-  phone: yup.string(),
+  course: yup.number().min(1).max(4).required('Курс обязателен'),
+  email: yup.string().trim().email('Неверный email').required('Email обязателен'),
+  phone: yup.string().trim().required('Телефон обязателен'),
   telegramId: yup.string(),
   startDate: yup.date().required('Дата начала обязательна'),
   endDate: yup.date().required('Дата окончания обязательна').min(yup.ref('startDate'), 'Дата окончания должна быть после даты начала'),
@@ -304,7 +304,7 @@ function StudentForm() {
             <input
               type="number"
               min="1"
-              max="10"
+              max="4"
               {...register('course', { valueAsNumber: true })}
               className="input"
             />
@@ -326,12 +326,13 @@ function StudentForm() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Email
+              Email <span className="text-red-500">*</span>
             </label>
             <input
               type="email"
               {...register('email')}
               className="input"
+              required
             />
             {errors.email && (
               <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.email.message}</p>
@@ -340,12 +341,13 @@ function StudentForm() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Телефон
+              Телефон <span className="text-red-500">*</span>
             </label>
             <input
               type="tel"
               {...register('phone')}
               className="input"
+              required
             />
           </div>
 

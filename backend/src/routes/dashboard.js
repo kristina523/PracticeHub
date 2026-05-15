@@ -4,6 +4,60 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+/**
+ * @swagger
+ * /api/dashboard/stats:
+ *   get:
+ *     summary: Получить статистику для дашборда
+ *     tags: [Dashboard]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Статистика дашборда
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalStudents:
+ *                   type: integer
+ *                 activeStudents:
+ *                   type: integer
+ *                 endingThisWeek:
+ *                   type: integer
+ *                 byPracticeType:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 byStatus:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 byInstitution:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 byCourse:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 byEnrolledCourse:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 upcomingStarts:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 upcomingEnds:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       401:
+ *         description: Не авторизован
+ */
 router.get('/stats', authenticateToken, async (req, res) => {
   try {
     const now = new Date();

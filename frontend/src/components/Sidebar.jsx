@@ -11,7 +11,8 @@ import {
   BookOpen,
   Menu,
   MessageSquare,
-  Video
+  Video,
+  User as UserIcon
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { useState } from 'react';
@@ -42,6 +43,7 @@ function Sidebar() {
     { name: 'Главная страница', href: '/teacher', icon: LayoutDashboard },
     { name: 'Календарь', href: '/teacher/calendar', icon: Calendar },
     { name: 'Курсы', href: '/teacher/courses', icon: BookOpen },
+    { name: 'Чаты', href: '/teacher/chats', icon: MessageSquare },
     { name: 'Практиканты', href: '/teacher/students', icon: Users },
     { name: 'Заявки', href: '/teacher/applications', icon: FileText },
     { name: 'Уведомления', href: '/teacher/notifications', icon: Megaphone },
@@ -56,6 +58,7 @@ function Sidebar() {
     { name: 'Чаты', href: '/student/chats', icon: MessageSquare },
     { name: 'Список заданий', href: '/student/tasks', icon: ClipboardList },
     { name: 'Подать заявку', href: '/student/application', icon: FileText },
+    { name: 'Профиль', href: '/student/profile', icon: UserIcon },
   ];
 
   const navigation = role === 'admin' 
@@ -65,18 +68,19 @@ function Sidebar() {
     : studentNavigation;
 
   return (
-    <aside className={`bg-white border-r border-gray-200 min-h-[calc(100vh-64px)] transition-all duration-300 ${isExpanded ? 'w-64' : 'w-20'}`}>
-      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+    <aside className={`min-h-[calc(100vh-76px)] transition-all duration-300 ${isExpanded ? 'w-72' : 'w-24'} p-3 md:p-4`}>
+      <div className="sticky top-[88px] bg-white/95 backdrop-blur-sm border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+      <div className="p-4 border-b border-slate-100 flex items-center justify-between">
         {isExpanded && (
-          <h2 className="text-xl font-semibold text-gray-900">
-            PracticeHub
+          <h2 className="text-base font-semibold text-slate-900">
+            Навигация
           </h2>
         )}
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+          className="p-2 rounded-xl hover:bg-slate-100 transition-colors"
         >
-          <Menu className="w-5 h-5 text-gray-600" />
+          <Menu className="w-5 h-5 text-slate-600" />
         </button>
       </div>
       <nav className="p-2">
@@ -89,14 +93,14 @@ function Sidebar() {
               <li key={item.name}>
                 <NavLink
                   to={item.href}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
                     isActive
-                      ? 'bg-blue-50 text-blue-700 font-medium'
-                      : 'text-gray-700 hover:bg-gray-100'
+                      ? 'bg-gradient-to-r from-blue-50 to-sky-50 text-blue-700 font-semibold border border-blue-100'
+                      : 'text-slate-700 hover:bg-slate-50'
                   }`}
                   title={!isExpanded ? item.name : ''}
                 >
-                  <Icon className="w-5 h-5 flex-shrink-0" />
+                  <Icon className={`w-5 h-5 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-500'}`} />
                   {isExpanded && (
                     <span className="text-sm">{item.name}</span>
                   )}
@@ -106,6 +110,7 @@ function Sidebar() {
           })}
         </ul>
       </nav>
+      </div>
     </aside>
   );
 }

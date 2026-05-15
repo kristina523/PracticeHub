@@ -2,16 +2,19 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import api from '../utils/api';
-import { ArrowLeft, Edit, Trash2, Loader2, Mail, Phone, Calendar, User, School, BookOpen } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2, Mail, Phone, Calendar, User, School, BookOpen } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { confirmDialog } from '../components/Toast';
 
 
 const getFullName = (student) => {
   if (!student) return 'Не указано';
-  const parts = [student.lastName, student.firstName];
-  if (student.middleName) parts.push(student.middleName);
-  return parts.join(' ');
+  const words = [student.lastName, student.firstName, student.middleName]
+    .filter((p) => p != null && String(p).trim() !== '')
+    .flatMap((p) => String(p).trim().split(/\s+/))
+    .filter((w) => w && !/^уточнить$/i.test(w));
+  return words.length ? words.join(' ') : 'Не указано';
 };
 
 const practiceTypeLabels = {
@@ -80,7 +83,13 @@ function StudentDetail() {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Вы уверены, что хотите удалить этого практиканта?')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите удалить этого практиканта?', {
+        title: 'Удалить практиканта?',
+        confirmText: 'Удалить',
+        variant: 'danger'
+      }))
+    ) {
       return;
     }
 
@@ -149,7 +158,12 @@ function StudentDetail() {
             {student.status === 'PENDING' && (
               <button
                 onClick={async () => {
-                  if (window.confirm('Активировать практику для этого студента?')) {
+                  if (
+                    await confirmDialog('Активировать практику для этого студента?', {
+                      title: 'Активировать практику?',
+                      confirmText: 'Активировать'
+                    })
+                  ) {
                     try {
                       await api.put(`/students/${id}`, { status: 'ACTIVE' });
                       fetchStudent();

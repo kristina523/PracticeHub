@@ -282,3 +282,16 @@ model WebinarRegistration {
   @@index([studentUserId])
   @@index([webinarId])
 }
+
+// Одноразовый токен сброса пароля (хранится SHA-256 от секретной части)
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  role      String // admin | teacher | student
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId, role])
+  @@index([expiresAt])
+}

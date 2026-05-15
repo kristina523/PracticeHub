@@ -47,7 +47,6 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Swagger документация
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customCss: '.swagger-ui .topbar { display: none }',
   customSiteTitle: 'PracticeHub API Documentation'
@@ -79,6 +78,8 @@ res.json({ status: 'ok', message: 'PracticeHub API запущен' });
 });
 
 app.use('/api/auth', authRoutes);
+// Если reverse-proxy передаёт на бэкенд путь без префикса /api (например /auth/... вместо /api/auth/...)
+app.use('/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/institutions', institutionRoutes);
 app.use('/api/dashboard', dashboardRoutes);
@@ -110,11 +111,9 @@ app.use((req, res) => {
 app.listen(PORT, async () => {
   console.log(`Сервер запущен на http://localhost:${PORT}`);
   
-  // Запускаем Telegram-бота (только если токен установлен)
   if (process.env.TELEGRAM_BOT_TOKEN) {
     try {
       const botModule = await import('./bot/telegramBot.js');
-      // Бот инициализируется автоматически при импорте модуля
       console.log('✅ Telegram-бот модуль загружен');
     } catch (error) {
       console.error('❌ Ошибка запуска Telegram-бота:', error.message);
@@ -125,7 +124,6 @@ app.listen(PORT, async () => {
   }
 });
 
-// Обработка необработанных ошибок промисов (чтобы ошибки бота не падали сервер)
 process.on('unhandledRejection', (reason, promise) => {
   if (reason && typeof reason === 'object' && reason.code === 'ETELEGRAM') {
     const error = reason;
@@ -135,7 +133,6 @@ process.on('unhandledRejection', (reason, promise) => {
     }
   }
   console.error('❌ Необработанная ошибка промиса:', reason);
-  // Не завершаем процесс, чтобы сервер продолжал работать
 });
 
 process.on('SIGTERM', async () => {

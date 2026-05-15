@@ -2,11 +2,62 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult, query } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
-import { notifyApplicationStatusChange } from '../bot/telegramBot.js';
+import {
+  notifyApplicationStatusChange,
+  notifyAdminsAboutNewApplication
+} from '../bot/telegramBot.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/**
+ * @swagger
+ * /api/applications:
+ *   get:
+ *     summary: Получить список заявок на практику
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, APPROVED, REJECTED]
+ *         description: Фильтр по статусу
+ *       - in: query
+ *         name: practiceType
+ *         schema:
+ *           type: string
+ *           enum: [EDUCATIONAL, PRODUCTION, INTERNSHIP]
+ *         description: Фильтр по типу практики
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Список заявок
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 applications:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 pagination:
+ *                   type: object
+ *       401:
+ *         description: Не авторизован
+ */
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const {
@@ -81,6 +132,31 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/applications/my:
+ *   get:
+ *     summary: Получить заявки текущего студента
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Список заявок студента
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 applications:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       403:
+ *         description: Доступ запрещен (только для студентов)
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить заявки текущего студента
 router.get('/my', authenticateToken, async (req, res) => {
   try {
@@ -131,6 +207,75 @@ router.get('/my', authenticateToken, async (req, res) => {
 });
 
 
+/**
+ * @swagger
+ * /api/applications:
+ *   post:
+ *     summary: Подать заявку на практику
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - lastName
+ *               - firstName
+ *               - practiceType
+ *               - institutionName
+ *               - course
+ *               - startDate
+ *               - endDate
+ *             properties:
+ *               lastName:
+ *                 type: string
+ *                 example: "Иванов"
+ *               firstName:
+ *                 type: string
+ *                 example: "Иван"
+ *               middleName:
+ *                 type: string
+ *                 example: "Иванович"
+ *               practiceType:
+ *                 type: string
+ *                 enum: [EDUCATIONAL, PRODUCTION, INTERNSHIP]
+ *               institutionName:
+ *                 type: string
+ *                 example: "МГУ"
+ *               institutionType:
+ *                 type: string
+ *               course:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 10
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               phone:
+ *                 type: string
+ *               telegramId:
+ *                 type: string
+ *               startDate:
+ *                 type: string
+ *                 format: date-time
+ *               endDate:
+ *                 type: string
+ *                 format: date-time
+ *               notes:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Заявка успешно подана
+ *       400:
+ *         description: Ошибка валидации или уже есть активная заявка
+ *       403:
+ *         description: Доступ запрещен (только для студентов)
+ *       401:
+ *         description: Не авторизован
+ */
 router.post('/',
   authenticateToken,
   [
@@ -138,7 +283,7 @@ router.post('/',
     body('firstName').trim().notEmpty().withMessage('Имя обязательно'),
     body('practiceType').isIn(['EDUCATIONAL', 'PRODUCTION', 'INTERNSHIP']).withMessage('Неверный тип практики'),
     body('institutionName').trim().notEmpty().withMessage('Название учебного заведения обязательно'),
-    body('course').isInt({ min: 1, max: 10 }).withMessage('Курс должен быть между 1 и 10'),
+    body('course').isInt({ min: 1, max: 4 }).withMessage('Курс должен быть между 1 и 4'),
     body('startDate').custom((value) => {
       if (!value) return false;
       const date = new Date(value);
@@ -148,7 +293,9 @@ router.post('/',
       if (!value) return false;
       const date = new Date(value);
       return !isNaN(date.getTime());
-    }).withMessage('Неверная дата окончания')
+    }).withMessage('Неверная дата окончания'),
+    body('email').trim().notEmpty().isEmail().withMessage('Укажите корректный email'),
+    body('phone').trim().notEmpty().withMessage('Укажите телефон')
   ],
   async (req, res) => {
     try {
@@ -217,8 +364,8 @@ router.post('/',
           institutionType: institutionType || 'EDUCATIONAL_INSTITUTION',
           institutionName,
           course,
-          email: email || studentUser.email,
-          phone,
+          email: String(email || '').trim(),
+          phone: String(phone || '').trim(),
           telegramId,
           startDate: start,
           endDate: end,
@@ -234,6 +381,10 @@ router.post('/',
             }
           }
         }
+      });
+
+      notifyAdminsAboutNewApplication(application.id).catch((err) => {
+        console.error('Не удалось уведомить администраторов о новой заявке на практику:', err);
       });
 
       res.status(201).json({ message: 'Заявка успешно подана', application });
@@ -264,6 +415,42 @@ router.post('/',
   }
 );
 
+/**
+ * @swagger
+ * /api/applications/{id}/approve:
+ *   patch:
+ *     summary: Одобрить заявку на практику
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID заявки
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               notes:
+ *                 type: string
+ *                 description: Дополнительные заметки
+ *     responses:
+ *       200:
+ *         description: Заявка одобрена, студент создан
+ *       400:
+ *         description: Заявка уже обработана
+ *       403:
+ *         description: Доступ запрещен (только для админов и преподавателей)
+ *       404:
+ *         description: Заявка не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 router.patch('/:id/approve', authenticateToken, async (req, res) => {
   try {
     console.log('🔵 Начало одобрения заявки:', req.params.id);
@@ -351,8 +538,16 @@ router.patch('/:id/approve', authenticateToken, async (req, res) => {
       // Проверяем, существует ли уже студент с таким userId или email
       let student = null;
       
-      // Сначала проверяем по userId (если есть)
-      if (application.studentUserId) {
+      // Сначала проверяем, связана ли заявка со студентом через studentId
+      if (application.studentId) {
+        student = await tx.student.findUnique({
+          where: { id: application.studentId }
+        });
+        console.log('🔍 Поиск студента по studentId из заявки:', application.studentId, student ? 'найден' : 'не найден');
+      }
+      
+      // Если не найден по studentId, проверяем по userId (если есть)
+      if (!student && application.studentUserId) {
         student = await tx.student.findUnique({
           where: { userId: application.studentUserId }
         });
@@ -546,13 +741,14 @@ router.patch('/:id/approve', authenticateToken, async (req, res) => {
         }
       }
 
-      // Обновляем заявку
+      // Обновляем заявку, связывая её со студентом
       const updatedApplication = await tx.practiceApplication.update({
         where: { id },
         data: {
           status: 'APPROVED',
           approvedBy: user.id,
-          notes: notes || application.notes
+          notes: notes || application.notes,
+          studentId: student.id // Связываем заявку со студентом
         },
         include: {
           studentUser: {
@@ -621,6 +817,42 @@ router.patch('/:id/approve', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/applications/{id}/reject:
+ *   patch:
+ *     summary: Отклонить заявку на практику
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID заявки
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               rejectionReason:
+ *                 type: string
+ *                 description: Причина отклонения
+ *     responses:
+ *       200:
+ *         description: Заявка отклонена
+ *       400:
+ *         description: Заявка уже обработана
+ *       403:
+ *         description: Доступ запрещен (только для админов и преподавателей)
+ *       404:
+ *         description: Заявка не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 router.patch('/:id/reject', authenticateToken, async (req, res) => {
   try {
     const user = req.user;
@@ -741,6 +973,31 @@ router.patch('/:id/reject', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/applications/{id}:
+ *   delete:
+ *     summary: Удалить заявку на практику
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID заявки
+ *     responses:
+ *       200:
+ *         description: Заявка успешно удалена
+ *       403:
+ *         description: Доступ запрещен (только для админов)
+ *       404:
+ *         description: Заявка не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     console.log('🗑️ DELETE запрос на удаление заявки:', req.params.id);
@@ -783,6 +1040,31 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/applications/{id}:
+ *   get:
+ *     summary: Получить заявку по ID
+ *     tags: [Applications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID заявки
+ *     responses:
+ *       200:
+ *         description: Информация о заявке
+ *       403:
+ *         description: Доступ запрещен
+ *       404:
+ *         description: Заявка не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;

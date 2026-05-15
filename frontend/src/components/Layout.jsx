@@ -14,11 +14,11 @@ function Layout() {
   }, [checkAuth, isAuthenticated]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen">
       <Header />
-      <div className="flex">
+      <div className="flex max-w-[1700px] mx-auto w-full">
         <Sidebar />
-        <main className="flex-1 p-6 lg:p-8 bg-gray-50 min-h-[calc(100vh-64px)]">
+        <main className="flex-1 p-5 md:p-7 lg:p-8 min-h-[calc(100vh-76px)]">
           <Outlet />
         </main>
       </div>

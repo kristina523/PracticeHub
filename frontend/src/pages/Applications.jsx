@@ -4,6 +4,7 @@ import { FileText, CheckCircle, XCircle, Clock, Loader2, Eye, BookOpen, User, Tr
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useAuthStore } from '../store/authStore';
+import { confirmDialog } from '../components/Toast';
 
 const practiceTypeLabels = {
   EDUCATIONAL: 'Учебная',
@@ -82,7 +83,12 @@ function Applications() {
   };
 
   const handleApprove = async (id) => {
-    if (!window.confirm('Вы уверены, что хотите одобрить эту заявку? Будет создан новый студент.')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите одобрить эту заявку? Будет создан новый студент.', {
+        title: 'Одобрить заявку?',
+        confirmText: 'Одобрить'
+      }))
+    ) {
       return;
     }
 
@@ -98,7 +104,13 @@ function Applications() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Вы уверены, что хотите удалить эту заявку? Это действие нельзя отменить.')) {
+    if (
+      !(await confirmDialog('Это действие нельзя отменить.', {
+        title: 'Удалить заявку?',
+        confirmText: 'Удалить',
+        variant: 'danger'
+      }))
+    ) {
       return;
     }
 
@@ -119,7 +131,13 @@ function Applications() {
       return;
     }
 
-    if (!window.confirm('Вы уверены, что хотите отклонить эту заявку?')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите отклонить эту заявку?', {
+        title: 'Отклонить заявку?',
+        confirmText: 'Отклонить',
+        variant: 'warning'
+      }))
+    ) {
       return;
     }
 
@@ -135,7 +153,12 @@ function Applications() {
   };
 
   const handleApproveEnrollment = async (enrollmentId) => {
-    if (!window.confirm('Вы уверены, что хотите одобрить эту заявку на курс?')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите одобрить эту заявку на курс?', {
+        title: 'Одобрить заявку на курс?',
+        confirmText: 'Одобрить'
+      }))
+    ) {
       return;
     }
 
@@ -150,7 +173,13 @@ function Applications() {
   };
 
   const handleRejectEnrollment = async (enrollmentId) => {
-    if (!window.confirm('Вы уверены, что хотите отклонить эту заявку на курс?')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите отклонить эту заявку на курс?', {
+        title: 'Отклонить заявку на курс?',
+        confirmText: 'Отклонить',
+        variant: 'warning'
+      }))
+    ) {
       return;
     }
 
@@ -170,9 +199,11 @@ function Applications() {
   };
 
   const getFullName = (app) => {
-    const parts = [app.lastName, app.firstName];
-    if (app.middleName) parts.push(app.middleName);
-    return parts.join(' ');
+    const parts = [app.lastName, app.firstName, app.middleName].filter((p) => {
+      const s = p != null ? String(p).trim() : '';
+      return s !== '' && s !== 'Уточнить';
+    });
+    return parts.length ? parts.join(' ') : '—';
   };
 
   return (

@@ -2,14 +2,18 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import api from '../utils/api';
-import { Search, Filter, Download, Loader2, Edit, Trash2, Eye, UserCheck, UserX } from 'lucide-react';
+import { Search, Download, Loader2, Trash2, Eye, UserCheck, UserX } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { confirmDialog } from '../components/Toast';
 
 const getFullName = (student) => {
-  const parts = [student.lastName, student.firstName];
-  if (student.middleName) parts.push(student.middleName);
-  return parts.join(' ');
+  if (!student) return '—';
+  const words = [student.lastName, student.firstName, student.middleName]
+    .filter((p) => p != null && String(p).trim() !== '')
+    .flatMap((p) => String(p).trim().split(/\s+/))
+    .filter((w) => w && !/^уточнить$/i.test(w));
+  return words.length ? words.join(' ') : '—';
 };
 
 const practiceTypeLabels = {
@@ -41,8 +45,8 @@ function Students() {
     practiceType: '',
     status: '',
     institutionId: '',
-    // По умолчанию показываем только зарегистрированных студентов
-    isRegistered: 'true'
+    // По умолчанию показываем всех студентов
+    isRegistered: ''
   });
   const [pagination, setPagination] = useState({
     page: 1,
@@ -93,16 +97,9 @@ function Students() {
       const response = await api.get('/students', { params });
       const allStudents = response.data.students || [];
 
-      // Показываем только реально существующих студентов с зарегистрированным аккаунтом
-      const realRegisteredStudents = allStudents.filter(
-        (s) => s.isRegistered && !s.isVirtual
-      );
-
-      setStudents(realRegisteredStudents);
-      setPagination(prev => ({
-        ...response.data.pagination,
-        total: realRegisteredStudents.length
-      }));
+      // Показываем всех, кого отдаёт API: карточки практикантов и аккаунты без карточки (регистрация на сайте).
+      setStudents(allStudents);
+      setPagination(response.data.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
     } catch (error) {
       console.error('Ошибка получения студентов:', error);
     } finally {
@@ -111,7 +108,13 @@ function Students() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Вы уверены, что хотите удалить этого практиканта?')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите удалить этого практиканта?', {
+        title: 'Удалить практиканта?',
+        confirmText: 'Удалить',
+        variant: 'danger'
+      }))
+    ) {
       return;
     }
 
@@ -153,18 +156,14 @@ function Students() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          Практиканты
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400 mt-2">
-          Управление студентами, проходящими практику
-        </p>
+        <h1 className="page-title">Практиканты</h1>
+        <p className="page-subtitle">Управление студентами, проходящими практику</p>
       </div>
 
       <div className="card">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-slate-400" />
             <input
               type="text"
               placeholder="Поиск..."
@@ -224,12 +223,12 @@ function Students() {
         </div>
 
         <div className="mt-4 flex items-center justify-between">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-sm text-slate-500">
             Найдено: {pagination.total} практикантов
           </p>
           <button
             onClick={exportToCSV}
-            className="btn btn-secondary flex items-center gap-2"
+            className="btn btn-secondary"
           >
             <Download className="w-4 h-4" />
             Экспорт в CSV
@@ -237,13 +236,13 @@ function Students() {
         </div>
       </div>
 
-      <div className="card overflow-x-auto">
+      <div className="card overflow-x-auto border border-slate-200/80">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
           </div>
         ) : students.length === 0 ? (
-          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+          <div className="text-center py-12 text-slate-500">
             Практиканты не найдены
           </div>
         ) : (
@@ -263,10 +262,10 @@ function Students() {
               </thead>
               <tbody>
                 {students.map((student) => (
-                  <tr key={student.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                  <tr key={student.id} className="hover:bg-slate-50">
                     <td className="font-medium">
                       {student.isVirtual ? (
-                        <span className="text-gray-500 dark:text-gray-400">
+                          <span className="text-slate-500">
                           {student.studentUser?.username || student.email}
                         </span>
                       ) : (
@@ -275,28 +274,28 @@ function Students() {
                     </td>
                     <td>
                       {student.isVirtual ? (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-slate-400">—</span>
                       ) : (
                         practiceTypeLabels[student.practiceType]
                       )}
                     </td>
                     <td>
                       {student.isVirtual ? (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-slate-400">—</span>
                       ) : (
                         student.institutionName
                       )}
                     </td>
                     <td>
                       {student.isVirtual ? (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-slate-400">—</span>
                       ) : (
                         student.course
                       )}
                     </td>
                     <td className="text-sm">
                       {student.isVirtual ? (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-slate-400">—</span>
                       ) : (
                         <>
                           {format(new Date(student.startDate), 'dd.MM.yyyy', { locale: ru })} - {' '}
@@ -306,7 +305,7 @@ function Students() {
                     </td>
                     <td>
                       {student.isVirtual ? (
-                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                           Зарегистрирован
                         </span>
                       ) : (
@@ -317,7 +316,7 @@ function Students() {
                     </td>
                     <td>
                       {student.isRegistered ? (
-                        <div className="flex items-center gap-1 text-green-600 dark:text-green-400" title={`Зарегистрирован: ${student.studentUser?.username || student.email || ''}`}>
+                        <div className="flex items-center gap-1 text-green-600" title={`Зарегистрирован: ${student.studentUser?.username || student.email || ''}`}>
                           <UserCheck className="w-4 h-4" />
                           <span className="text-xs">Да</span>
                         </div>
@@ -332,38 +331,30 @@ function Students() {
                       <div className="flex items-center gap-2">
                         {student.isVirtual ? (
                           <>
-                            <span className="text-xs text-gray-500 dark:text-gray-400" title="Виртуальная запись — студент зарегистрирован, но не добавлен в систему">
+                            <span className="text-xs text-slate-500" title="Виртуальная запись — студент зарегистрирован, но не добавлен в систему">
                               Только регистрация
                             </span>
                             <button
                               onClick={() => handleDelete(student.id)}
-                              className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                              className="p-1 hover:bg-red-50 rounded"
                               title="Удалить виртуальную запись"
                             >
-                              <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
+                              <Trash2 className="w-4 h-4 text-red-600" />
                             </button>
                           </>
                         ) : (
                           <>
+                            {/* Редактирование карточки из таблицы отключено — данные меняются через заявки / отдельные процессы */}
                             <Link
                               to={`${getBasePath()}/${student.id}`}
-                              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                              className="p-1 hover:bg-slate-100 rounded-lg"
                               title="Просмотр"
                             >
-                              <Eye className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                              <Eye className="w-4 h-4 text-slate-600" />
                             </Link>
-                            {user?.role === 'admin' && (
-                              <Link
-                                to={`${getBasePath()}/${student.id}/edit`}
-                                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-                                title="Редактировать"
-                              >
-                                <Edit className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                              </Link>
-                            )}
                             <button
                               onClick={() => handleDelete(student.id)}
-                              className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                              className="p-1 hover:bg-red-50 rounded-lg"
                               title="Удалить"
                             >
                               <Trash2 className="w-4 h-4 text-red-600 dark:text-red-400" />
@@ -379,7 +370,7 @@ function Students() {
 
             {pagination.pages > 1 && (
               <div className="mt-4 flex items-center justify-between">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  <p className="text-sm text-slate-500">
                   Страница {pagination.page} из {pagination.pages}
                 </p>
                 <div className="flex gap-2">

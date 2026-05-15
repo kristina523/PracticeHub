@@ -5,6 +5,81 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+/**
+ * @swagger
+ * /api/students:
+ *   get:
+ *     summary: Получить список студентов
+ *     tags: [Students]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Номер страницы
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Количество записей на странице
+ *       - in: query
+ *         name: practiceType
+ *         schema:
+ *           type: string
+ *           enum: [EDUCATIONAL, PRODUCTION, INTERNSHIP]
+ *         description: Тип практики
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [PENDING, ACTIVE, COMPLETED]
+ *         description: Статус практики
+ *       - in: query
+ *         name: institutionId
+ *         schema:
+ *           type: string
+ *         description: ID учебного заведения
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Поиск по ФИО, email или названию учебного заведения
+ *       - in: query
+ *         name: userOnly
+ *         schema:
+ *           type: boolean
+ *         description: Только студенты с аккаунтами (для студентов)
+ *     responses:
+ *       200:
+ *         description: Список студентов
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 students:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 pagination:
+ *                   type: object
+ *                   properties:
+ *                     page:
+ *                       type: integer
+ *                     limit:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *       401:
+ *         description: Не авторизован
+ *       500:
+ *         description: Внутренняя ошибка сервера
+ */
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const {
@@ -89,13 +164,27 @@ router.get('/', authenticateToken, async (req, res) => {
       }
     });
 
-    // Получаем ID всех StudentUser, которые уже связаны со Student через userId
-    const studentsWithUser = students.filter(s => s.userId).map(s => s.userId);
-    const studentUserIdsSet = new Set(studentsWithUser);
+    // Все StudentUser, привязанные к карточке Student (по всей базе, не только текущая страница)
+    const linkedRows = await prisma.student.findMany({
+      where: { userId: { not: null } },
+      select: { userId: true }
+    });
+    const studentUserIdsSet = new Set(linkedRows.map((r) => r.userId).filter(Boolean));
+
+    const applicationUserRows = await prisma.practiceApplication.findMany({
+      where: { studentUserId: { not: null } },
+      select: { studentUserId: true },
+      distinct: ['studentUserId']
+    });
+    const studentUserIdsWithApplication = new Set(
+      applicationUserRows.map((r) => r.studentUserId).filter(Boolean)
+    );
 
     // Разделяем зарегистрированных на тех, у кого есть Student запись, и тех, у кого нет
-    const registeredWithStudent = allRegisteredStudents.filter(reg => studentUserIdsSet.has(reg.id));
-    const registeredWithoutStudent = allRegisteredStudents.filter(reg => !studentUserIdsSet.has(reg.id));
+    const registeredWithStudent = allRegisteredStudents.filter((reg) => studentUserIdsSet.has(reg.id));
+    const registeredWithoutStudent = allRegisteredStudents.filter(
+      (reg) => !studentUserIdsSet.has(reg.id) && !studentUserIdsWithApplication.has(reg.id)
+    );
 
     // Создаем Map для быстрого доступа к данным StudentUser по ID
     const registeredMap = new Map();
@@ -196,6 +285,33 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/students/{id}:
+ *   get:
+ *     summary: Получить студента по ID
+ *     tags: [Students]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID студента
+ *     responses:
+ *       200:
+ *         description: Информация о студенте
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *       404:
+ *         description: Студент не найден
+ *       401:
+ *         description: Не авторизован
+ */
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -218,6 +334,60 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/students:
+ *   post:
+ *     summary: Создать нового студента
+ *     tags: [Students]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - lastName
+ *               - firstName
+ *               - practiceType
+ *               - institutionName
+ *               - course
+ *               - startDate
+ *               - endDate
+ *             properties:
+ *               lastName:
+ *                 type: string
+ *                 example: "Иванов"
+ *               firstName:
+ *                 type: string
+ *                 example: "Иван"
+ *               middleName:
+ *                 type: string
+ *                 example: "Иванович"
+ *               practiceType:
+ *                 type: string
+ *                 enum: [EDUCATIONAL, PRODUCTION, INTERNSHIP]
+ *               institutionName:
+ *                 type: string
+ *                 example: "МГУ"
+ *               course:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 10
+ *               startDate:
+ *                 type: string
+ *                 format: date-time
+ *               endDate:
+ *                 type: string
+ *                 format: date-time
+ *     responses:
+ *       201:
+ *         description: Студент успешно создан
+ *       400:
+ *         description: Ошибка валидации
+ */
 router.post('/',
   authenticateToken,
   [
@@ -227,8 +397,9 @@ router.post('/',
     body('practiceType').isIn(['EDUCATIONAL', 'PRODUCTION', 'INTERNSHIP']).withMessage('Invalid practice type'),
     body('institutionId').optional(),
     body('institutionName').trim().notEmpty().withMessage('Название учебного заведения обязательно'),
-    body('course').isInt({ min: 1, max: 10 }).withMessage('Курс должен быть между 1 и 10'),
-    body('email').optional().isEmail().withMessage('Неверный email'),
+    body('course').isInt({ min: 1, max: 4 }).withMessage('Курс должен быть между 1 и 4'),
+    body('email').trim().notEmpty().isEmail().withMessage('Укажите корректный email'),
+    body('phone').trim().notEmpty().withMessage('Укажите телефон'),
     body('startDate').isISO8601().withMessage('Неверная дата начала'),
     body('endDate').isISO8601().withMessage('Неверная дата окончания'),
     body('status').optional().isIn(['PENDING', 'ACTIVE', 'COMPLETED']).withMessage('Неверный статус')
@@ -261,7 +432,7 @@ router.post('/',
       let finalInstitutionId = institutionId;
       
       if (!finalInstitutionId && institutionName) {
-        let institution = await prisma.institution.findUnique({
+        let institution = await prisma.institution.findFirst({
           where: { name: institutionName }
         });
 
@@ -294,30 +465,63 @@ router.post('/',
         return res.status(400).json({ message: 'Дата окончания должна быть после даты начала' });
       }
 
-      const student = await prisma.student.create({
-        data: {
-          lastName,
-          firstName,
-          middleName: middleName || null,
-          practiceType,
-          institutionId: finalInstitutionId,
-          institutionName,
-          course,
-          email,
-          phone,
-          telegramId,
-          startDate: start,
-          endDate: end,
-          status,
-          supervisor,
-          notes
-        },
-        include: {
-          institution: true
-        }
+      // Получаем тип института для заявки
+      const institution = await prisma.institution.findUnique({
+        where: { id: finalInstitutionId }
+      });
+      const institutionType = institution?.type || 'COLLEGE';
+
+      // Создаем студента и заявку на практику в транзакции
+      const result = await prisma.$transaction(async (tx) => {
+        // Создаем студента
+        const student = await tx.student.create({
+          data: {
+            lastName,
+            firstName,
+            middleName: middleName || null,
+            practiceType,
+            institutionId: finalInstitutionId,
+            institutionName,
+            course,
+            email,
+            phone,
+            telegramId,
+            startDate: start,
+            endDate: end,
+            status: 'PENDING', // Всегда создаем со статусом PENDING
+            supervisor,
+            notes
+          },
+          include: {
+            institution: true
+          }
+        });
+
+        // Создаем заявку на практику для этого студента
+        const application = await tx.practiceApplication.create({
+          data: {
+            firstName,
+            lastName,
+            middleName: middleName || null,
+            practiceType,
+            institutionType: institutionType, // Используем тип из института
+            institutionName,
+            course,
+            email: email || '',
+            phone: phone || '',
+            telegramId: telegramId || null,
+            startDate: start,
+            endDate: end,
+            status: 'PENDING',
+            notes: notes || null,
+            studentId: student.id // Связываем заявку со студентом
+          }
+        });
+
+        return { student, application };
       });
 
-      res.status(201).json(student);
+      res.status(201).json(result.student);
     } catch (error) {
       console.error('Ошибка создания студента:', error);
       res.status(500).json({ message: 'Внутренняя ошибка сервера' });
@@ -325,6 +529,67 @@ router.post('/',
   }
 );
 
+/**
+ * @swagger
+ * /api/students/{id}:
+ *   put:
+ *     summary: Обновить информацию о студенте
+ *     tags: [Students]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID студента
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               lastName:
+ *                 type: string
+ *               firstName:
+ *                 type: string
+ *               middleName:
+ *                 type: string
+ *               practiceType:
+ *                 type: string
+ *                 enum: [EDUCATIONAL, PRODUCTION, INTERNSHIP]
+ *               institutionId:
+ *                 type: string
+ *               institutionName:
+ *                 type: string
+ *               course:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 10
+ *               email:
+ *                 type: string
+ *                 format: email
+ *               startDate:
+ *                 type: string
+ *                 format: date-time
+ *               endDate:
+ *                 type: string
+ *                 format: date-time
+ *               status:
+ *                 type: string
+ *                 enum: [PENDING, ACTIVE, COMPLETED]
+ *     responses:
+ *       200:
+ *         description: Студент успешно обновлен
+ *       400:
+ *         description: Ошибка валидации
+ *       404:
+ *         description: Студент не найден
+ *       401:
+ *         description: Не авторизован
+ */
 router.put('/:id',
   authenticateToken,
   [
@@ -334,7 +599,7 @@ router.put('/:id',
     body('practiceType').optional().isIn(['EDUCATIONAL', 'PRODUCTION', 'INTERNSHIP']).withMessage('Неверный тип практики'),
     body('institutionId').optional().notEmpty().withMessage('ID института не может быть пустым'),
     body('institutionName').optional().trim().notEmpty().withMessage('Название института не может быть пустым'),
-    body('course').optional().isInt({ min: 1, max: 10 }).withMessage('Курс должен быть между 1 и 10'),
+    body('course').optional().isInt({ min: 1, max: 4 }).withMessage('Курс должен быть между 1 и 4'),
     body('email').optional().isEmail().withMessage('Неверный email'),
     body('startDate').optional().isISO8601().withMessage('Неверная дата начала'),
     body('endDate').optional().isISO8601().withMessage('Неверная дата окончания'),
@@ -423,6 +688,31 @@ router.put('/:id',
 );
 
 
+/**
+ * @swagger
+ * /api/students/{id}:
+ *   delete:
+ *     summary: Удалить студента
+ *     tags: [Students]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID студента (может начинаться с "user_" для виртуальных студентов)
+ *     responses:
+ *       200:
+ *         description: Студент успешно удален
+ *       404:
+ *         description: Студент не найден
+ *       400:
+ *         description: Ошибка удаления
+ *       401:
+ *         description: Не авторизован
+ */
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;

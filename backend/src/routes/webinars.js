@@ -6,6 +6,42 @@ import { authenticateToken } from '../middleware/auth.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/**
+ * @swagger
+ * /api/webinars:
+ *   get:
+ *     summary: Получить список вебинаров
+ *     tags: [Webinars]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: upcoming
+ *         schema:
+ *           type: string
+ *           enum: ["true", "false"]
+ *         description: Только предстоящие вебинары
+ *       - in: query
+ *         name: past
+ *         schema:
+ *           type: string
+ *           enum: ["true", "false"]
+ *         description: Только прошедшие вебинары
+ *     responses:
+ *       200:
+ *         description: Список вебинаров
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 webinars:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить все вебинары
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -21,31 +57,52 @@ router.get('/', authenticateToken, async (req, res) => {
       where.startTime = { lt: now };
     }
 
+    // Формируем include в зависимости от роли пользователя
+    const includeOptions = {
+      _count: {
+        select: {
+          registrations: true
+        }
+      }
+    };
+    
+    // Для студентов включаем только их регистрации
+    if (user.role === 'student') {
+      includeOptions.registrations = {
+        where: {
+          studentUserId: user.id
+        }
+      };
+    }
+    
     const webinars = await prisma.webinar.findMany({
       where,
-      include: {
-        _count: {
-          select: {
-            registrations: true
-          }
-        },
-        registrations: user.role === 'student' ? {
-          where: {
-            studentUserId: user.id
-          }
-        } : false
-      },
+      include: includeOptions,
       orderBy: {
         startTime: 'asc'
       }
     });
 
     // Для студентов добавляем информацию о регистрации
-    const webinarsWithRegistration = webinars.map(webinar => ({
-      ...webinar,
-      isRegistered: user.role === 'student' && webinar.registrations && webinar.registrations.length > 0,
-      registrationCount: webinar._count.registrations
-    }));
+    const webinarsWithRegistration = webinars.map(webinar => {
+      // Для студентов проверяем наличие регистрации
+      let isRegistered = false;
+      if (user.role === 'student') {
+        // registrations - это массив регистраций текущего студента
+        isRegistered = Array.isArray(webinar.registrations) && webinar.registrations.length > 0;
+        
+        // Логирование для отладки
+        console.log(`Вебинар "${webinar.title}" (ID: ${webinar.id}): isRegistered=${isRegistered}, registrations.length=${webinar.registrations?.length || 0}, userId=${user.id}`);
+      }
+      
+      return {
+        ...webinar,
+        isRegistered,
+        registrationCount: webinar._count.registrations,
+        // Убираем registrations из ответа, чтобы не отправлять лишние данные
+        registrations: undefined
+      };
+    });
 
     res.json({ webinars: webinarsWithRegistration });
   } catch (error) {
@@ -54,6 +111,36 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/webinars/{id}:
+ *   get:
+ *     summary: Получить вебинар по ID
+ *     tags: [Webinars]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID вебинара
+ *     responses:
+ *       200:
+ *         description: Информация о вебинаре
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 webinar:
+ *                   type: object
+ *       404:
+ *         description: Вебинар не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить конкретный вебинар
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -103,6 +190,54 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/webinars:
+ *   post:
+ *     summary: Создать вебинар
+ *     tags: [Webinars]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - link
+ *               - startTime
+ *               - endTime
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 example: "Введение в веб-разработку"
+ *               description:
+ *                 type: string
+ *               link:
+ *                 type: string
+ *                 format: uri
+ *                 example: "https://zoom.us/j/123456789"
+ *               startTime:
+ *                 type: string
+ *                 format: date-time
+ *               endTime:
+ *                 type: string
+ *                 format: date-time
+ *               maxParticipants:
+ *                 type: integer
+ *                 description: Максимальное количество участников
+ *     responses:
+ *       201:
+ *         description: Вебинар создан
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для админов)
+ *       401:
+ *         description: Не авторизован
+ */
 // Создать вебинар (только админ)
 router.post(
   '/',
@@ -153,6 +288,54 @@ router.post(
   }
 );
 
+/**
+ * @swagger
+ * /api/webinars/{id}:
+ *   patch:
+ *     summary: Обновить вебинар
+ *     tags: [Webinars]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID вебинара
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               link:
+ *                 type: string
+ *                 format: uri
+ *               startTime:
+ *                 type: string
+ *                 format: date-time
+ *               endTime:
+ *                 type: string
+ *                 format: date-time
+ *               maxParticipants:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Вебинар обновлен
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для админов)
+ *       404:
+ *         description: Вебинар не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Обновить вебинар (только админ)
 router.patch(
   '/:id',
@@ -203,6 +386,31 @@ router.patch(
   }
 );
 
+/**
+ * @swagger
+ * /api/webinars/{id}:
+ *   delete:
+ *     summary: Удалить вебинар
+ *     tags: [Webinars]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID вебинара
+ *     responses:
+ *       200:
+ *         description: Вебинар удален
+ *       403:
+ *         description: Доступ запрещен (только для админов)
+ *       404:
+ *         description: Вебинар не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Удалить вебинар (только админ)
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {
@@ -231,6 +439,33 @@ router.delete('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/webinars/{id}/register:
+ *   post:
+ *     summary: Зарегистрироваться на вебинар
+ *     tags: [Webinars]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID вебинара
+ *     responses:
+ *       201:
+ *         description: Регистрация успешна
+ *       400:
+ *         description: Вебинар прошел, достигнут лимит участников или уже зарегистрирован
+ *       403:
+ *         description: Доступ запрещен (только для студентов)
+ *       404:
+ *         description: Вебинар не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Зарегистрироваться на вебинар (студент)
 router.post('/:id/register', authenticateToken, async (req, res) => {
   try {
@@ -305,6 +540,31 @@ router.post('/:id/register', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/webinars/{id}/register:
+ *   delete:
+ *     summary: Отменить регистрацию на вебинар
+ *     tags: [Webinars]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID вебинара
+ *     responses:
+ *       200:
+ *         description: Регистрация отменена
+ *       403:
+ *         description: Доступ запрещен (только для студентов)
+ *       404:
+ *         description: Регистрация не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 // Отменить регистрацию на вебинар (студент)
 router.delete('/:id/register', authenticateToken, async (req, res) => {
   try {

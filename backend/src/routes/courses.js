@@ -6,6 +6,36 @@ import { authenticateToken } from '../middleware/auth.js';
 const router = express.Router();
 const prisma = new PrismaClient();
 
+/**
+ * @swagger
+ * /api/courses:
+ *   get:
+ *     summary: Получить список курсов
+ *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: direction
+ *         schema:
+ *           type: string
+ *         description: Направление курса
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Список курсов
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить все курсы (для преподавателя - только свои, для админа - все)
 router.get('/', authenticateToken, async (req, res) => {
   try {
@@ -83,6 +113,31 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/courses/{id}:
+ *   get:
+ *     summary: Получить курс по ID
+ *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID курса
+ *     responses:
+ *       200:
+ *         description: Информация о курсе
+ *       403:
+ *         description: Доступ запрещен
+ *       404:
+ *         description: Курс не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить конкретный курс
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
@@ -158,6 +213,49 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/courses:
+ *   post:
+ *     summary: Создать курс
+ *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - direction
+ *             properties:
+ *               title:
+ *                 type: string
+ *                 example: "Введение в программирование"
+ *               description:
+ *                 type: string
+ *                 example: "Базовый курс по программированию"
+ *               direction:
+ *                 type: string
+ *                 example: "Программирование"
+ *               imageUrl:
+ *                 type: string
+ *                 format: uri
+ *                 description: URL изображения курса
+ *     responses:
+ *       201:
+ *         description: Курс создан
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей)
+ *       404:
+ *         description: Преподаватель не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Создать курс (только преподаватель)
 router.post('/',
   authenticateToken,
@@ -218,6 +316,48 @@ router.post('/',
   }
 );
 
+/**
+ * @swagger
+ * /api/courses/{id}:
+ *   put:
+ *     summary: Обновить курс
+ *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID курса
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               direction:
+ *                 type: string
+ *               imageUrl:
+ *                 type: string
+ *                 format: uri
+ *     responses:
+ *       200:
+ *         description: Курс обновлен
+ *       400:
+ *         description: Ошибка валидации
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей, только свои курсы)
+ *       404:
+ *         description: Курс не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Обновить курс (только преподаватель, только свои курсы)
 router.put('/:id',
   authenticateToken,
@@ -291,6 +431,31 @@ router.put('/:id',
   }
 );
 
+/**
+ * @swagger
+ * /api/courses/{id}:
+ *   delete:
+ *     summary: Удалить курс
+ *     tags: [Courses]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID курса
+ *     responses:
+ *       200:
+ *         description: Курс удален
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей и админов)
+ *       404:
+ *         description: Курс не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Удалить курс (только преподаватель, только свои курсы)
 router.delete('/:id', authenticateToken, async (req, res) => {
   try {

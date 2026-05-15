@@ -4,6 +4,7 @@ import api from '../utils/api';
 import { ArrowLeft, Plus, Loader2, Edit, Trash2, FileText, Video, Link as LinkIcon, File, BookOpen, X, Eye, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { confirmDialog } from '../components/Toast';
 
 const materialTypeIcons = {
   TEXT: FileText,
@@ -35,8 +36,7 @@ function CourseMaterials() {
     description: '',
     content: '',
     fileUrl: '',
-    materialType: 'TEXT',
-    order: 0
+    materialType: 'TEXT'
   });
 
   useEffect(() => {
@@ -70,11 +70,10 @@ function CourseMaterials() {
     try {
       await api.post('/course-materials', {
         ...formData,
-        courseId,
-        order: parseInt(formData.order)
+        courseId
       });
       setShowCreateModal(false);
-      setFormData({ title: '', description: '', content: '', fileUrl: '', materialType: 'TEXT', order: 0 });
+      setFormData({ title: '', description: '', content: '', fileUrl: '', materialType: 'TEXT' });
       fetchMaterials();
     } catch (error) {
       alert('Ошибка создания материала: ' + (error.response?.data?.message || error.message));
@@ -85,11 +84,10 @@ function CourseMaterials() {
     e.preventDefault();
     try {
       await api.put(`/course-materials/${editingMaterial.id}`, {
-        ...formData,
-        order: parseInt(formData.order)
+        ...formData
       });
       setEditingMaterial(null);
-      setFormData({ title: '', description: '', content: '', fileUrl: '', materialType: 'TEXT', order: 0 });
+      setFormData({ title: '', description: '', content: '', fileUrl: '', materialType: 'TEXT' });
       fetchMaterials();
     } catch (error) {
       alert('Ошибка обновления материала: ' + (error.response?.data?.message || error.message));
@@ -97,7 +95,13 @@ function CourseMaterials() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Вы уверены, что хотите удалить этот материал?')) {
+    if (
+      !(await confirmDialog('Вы уверены, что хотите удалить этот материал?', {
+        title: 'Удалить материал?',
+        confirmText: 'Удалить',
+        variant: 'danger'
+      }))
+    ) {
       return;
     }
 
@@ -116,15 +120,14 @@ function CourseMaterials() {
       description: material.description || '',
       content: material.content || '',
       fileUrl: material.fileUrl || '',
-      materialType: material.materialType || 'TEXT',
-      order: material.order || 0
+      materialType: material.materialType || 'TEXT'
     });
   };
 
   const closeModal = () => {
     setShowCreateModal(false);
     setEditingMaterial(null);
-    setFormData({ title: '', description: '', content: '', fileUrl: '', materialType: 'TEXT', order: 0 });
+    setFormData({ title: '', description: '', content: '', fileUrl: '', materialType: 'TEXT' });
   };
 
   if (loading) {
@@ -391,18 +394,6 @@ function CourseMaterials() {
                     />
                   </div>
                 )}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Порядок отображения
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.order}
-                    onChange={(e) => setFormData({ ...formData, order: e.target.value })}
-                    className="input"
-                    min="0"
-                  />
-                </div>
                 <div className="flex justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
                   <button
                     type="button"

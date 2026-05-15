@@ -3,6 +3,7 @@ import api from '../utils/api';
 import { Loader2, Calendar, Users, ExternalLink, CheckCircle, XCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
+import { confirmDialog } from '../components/Toast';
 
 function StudentWebinars() {
   const [webinars, setWebinars] = useState([]);
@@ -34,6 +35,10 @@ function StudentWebinars() {
       await api.post(`/webinars/${webinarId}/register`);
       alert('Вы успешно зарегистрированы на вебинар!');
       fetchWebinars();
+      // Уведомляем календарь об изменении регистрации
+      localStorage.setItem('webinarRegistrationChanged', Date.now().toString());
+      // Триггерим событие для обновления календаря на этой же вкладке
+      window.dispatchEvent(new Event('webinarRegistrationChanged'));
     } catch (error) {
       console.error('Ошибка регистрации:', error);
       alert(error.response?.data?.message || 'Ошибка регистрации на вебинар');
@@ -41,12 +46,23 @@ function StudentWebinars() {
   };
 
   const handleUnregister = async (webinarId) => {
-    if (!confirm('Вы уверены, что хотите отменить регистрацию?')) return;
+    if (
+      !(await confirmDialog('Вы уверены, что хотите отменить регистрацию?', {
+        title: 'Отменить регистрацию?',
+        confirmText: 'Отменить регистрацию',
+        variant: 'warning'
+      }))
+    )
+      return;
 
     try {
       await api.delete(`/webinars/${webinarId}/register`);
       alert('Регистрация отменена');
       fetchWebinars();
+      // Уведомляем календарь об изменении регистрации
+      localStorage.setItem('webinarRegistrationChanged', Date.now().toString());
+      // Триггерим событие для обновления календаря на этой же вкладке
+      window.dispatchEvent(new Event('webinarRegistrationChanged'));
     } catch (error) {
       console.error('Ошибка отмены регистрации:', error);
       alert(error.response?.data?.message || 'Ошибка отмены регистрации');

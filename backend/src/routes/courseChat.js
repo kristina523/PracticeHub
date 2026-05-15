@@ -2,11 +2,47 @@ import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { body, validationResult } from 'express-validator';
 import { authenticateToken } from '../middleware/auth.js';
+import { notifyStudentAboutCourseChatMessage } from '../bot/telegramBot.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Получить все сообщения чата для конкретной записи на курс
+/**
+ * @swagger
+ * /api/course-chat/enrollment/{enrollmentId}:
+ *   get:
+ *     summary: Получить сообщения чата курса
+ *     tags: [Course Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: enrollmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID записи на курс
+ *     responses:
+ *       200:
+ *         description: Список сообщений чата
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 messages:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                 enrollment:
+ *                   type: object
+ *       403:
+ *         description: Доступ запрещен
+ *       404:
+ *         description: Запись на курс не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 router.get('/enrollment/:enrollmentId', authenticateToken, async (req, res) => {
   try {
     const { enrollmentId } = req.params;
@@ -59,6 +95,45 @@ router.get('/enrollment/:enrollmentId', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/course-chat/enrollment/{enrollmentId}:
+ *   post:
+ *     summary: Отправить сообщение в чат курса
+ *     tags: [Course Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: enrollmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID записи на курс
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - message
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 example: "Здравствуйте, у меня вопрос по заданию"
+ *     responses:
+ *       201:
+ *         description: Сообщение отправлено
+ *       400:
+ *         description: Ошибка валидации или заявка не одобрена
+ *       403:
+ *         description: Доступ запрещен
+ *       404:
+ *         description: Запись на курс не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 // Отправить сообщение в чат
 router.post('/enrollment/:enrollmentId', 
   authenticateToken,
@@ -158,6 +233,12 @@ router.post('/enrollment/:enrollmentId',
         }
       });
 
+      if (senderType === 'TEACHER') {
+        notifyStudentAboutCourseChatMessage(enrollmentId, message).catch((err) =>
+          console.error('Не удалось уведомить студента о сообщении в чате курса:', err)
+        );
+      }
+
       res.status(201).json({ message: 'Сообщение отправлено', chatMessage });
     } catch (error) {
       console.error('Ошибка отправки сообщения:', error);
@@ -166,6 +247,31 @@ router.post('/enrollment/:enrollmentId',
   }
 );
 
+/**
+ * @swagger
+ * /api/course-chat/student:
+ *   get:
+ *     summary: Получить все чаты студента
+ *     tags: [Course Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Список чатов студента
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 enrollments:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       403:
+ *         description: Доступ запрещен (только для студентов)
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить все чаты для студента (по всем его записям на курсы)
 router.get('/student', authenticateToken, async (req, res) => {
   try {
@@ -212,6 +318,33 @@ router.get('/student', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/course-chat/teacher:
+ *   get:
+ *     summary: Получить все чаты преподавателя
+ *     tags: [Course Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Список чатов преподавателя
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 enrollments:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       403:
+ *         description: Доступ запрещен (только для преподавателей)
+ *       404:
+ *         description: Преподаватель не найден
+ *       401:
+ *         description: Не авторизован
+ */
 // Получить все чаты для преподавателя (по всем записям на его курсы)
 router.get('/teacher', authenticateToken, async (req, res) => {
   try {
@@ -271,6 +404,31 @@ router.get('/teacher', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/course-chat/enrollment/{enrollmentId}/read:
+ *   patch:
+ *     summary: Отметить сообщения как прочитанные
+ *     tags: [Course Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: enrollmentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID записи на курс
+ *     responses:
+ *       200:
+ *         description: Сообщения отмечены как прочитанные
+ *       403:
+ *         description: Доступ запрещен
+ *       404:
+ *         description: Запись на курс не найдена
+ *       401:
+ *         description: Не авторизован
+ */
 // Отметить сообщения как прочитанные
 router.patch('/enrollment/:enrollmentId/read', authenticateToken, async (req, res) => {
   try {
